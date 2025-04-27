@@ -1,0 +1,18 @@
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Replace configs
+      uses: ./.github/actions/replace-webconfig
+      with:
+        environment: smoke
+        keyvault-name: my-keyvault
+        file-path: ./my-app/web.config

@@ -1,0 +1,59 @@
+name: "Replace web.config variables"
+description: "Replace variables in web.config using environment and Key Vault secrets file"
+inputs:
+  environment:
+    description: "Environment name (e.g. smoke, staging, production)"
+    required: true
+  keyvault-name:
+    description: "Azure Key Vault name"
+    required: true
+  file-path:
+    description: "Path to the web.config file"
+    required: true
+  secrets-env-path:
+    description: "Path to the secrets.env file (default: ./secrets.env)"
+    required: false
+    default: "./secrets.env"
+  replace-script-path:
+    description: "Path to replace.sh script"
+    required: false
+    default: "./replace.sh"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+    - name: Download secrets from Key Vault
+      shell: bash
+      run: |
+        echo "Fetching secrets from Key Vault..."
+        secrets=$(az keyvault secret list --vault-name "${{ inputs.keyvault-name }}" --query "[].id" -o tsv)
+
+        if [ -z "$secrets" ]; then
+          echo "No secrets found in Key Vault."
+          exit 1
+        fi
+
+        > ${{ inputs.secrets-env-path }}
+
+        for secret_id in $secrets; do
+          name=$(basename "$secret_id")
+          value=$(az keyvault secret show --id "$secret_id" --query "value" -o tsv)
+          echo "$name=\"$value\"" >> ${{ inputs.secrets-env-path }}
+        done
+
+    - name: Replace variables in web.config
+      shell: bash
+      run: |
+        chmod +x "${{ inputs.replace-script-path }}"
+        "${{ inputs.replace-script-path }}" \
+          "${{ inputs.environment }}" \
+          "${{ inputs.keyvault-name }}" \
+          "${{ inputs.file-path }}" \
+          "${{ inputs.secrets-env-path }}"

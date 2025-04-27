@@ -1,13 +1,8 @@
 name: Mirror ADO Repo to GitHub
 
 on:
-  # Schedule the workflow to run periodically
   schedule:
-    # Runs every hour (adjust cron schedule as needed)
-    # See: https://crontab.guru/ for help with cron syntax
     - cron: '0 * * * *'
-
-  # Allow manual triggering from the Actions tab
   workflow_dispatch:
 
 jobs:
@@ -17,37 +12,74 @@ jobs:
       - name: Checkout Target Repo (GitHub)
         uses: actions/checkout@v4
         with:
-          # Fetch all history and tags, not just the latest commit
           fetch-depth: 0
 
       - name: Set up Git Credentials and Configuration
         run: |
-          # Set Git config for the workflow execution
           git config --global user.name 'GitHub Actions Mirror'
           git config --global user.email 'actions-mirror@github.com'
 
-      - name: Mirror ADO Repo
+      - name: Install gh CLI and git-lfs
+        run: |
+          sudo apt-get update
+          sudo apt-get install gh git-lfs -y
+          git lfs install
+
+      - name: Check if GitHub repo exists, create if not
         env:
-          # Construct the ADO repo URL using the secret PAT
-          # Replace <ADO_ORG_NAME>, <ADO_PROJECT_NAME>, <ADO_REPO_NAME> with your actual values
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          set -e
+          if ! gh repo view <GITHUB_OWNER>/<GITHUB_REPO> > /dev/null 2>&1; then
+            echo "Repo does not exist. Creating..."
+            gh repo create <GITHUB_OWNER>/<GITHUB_REPO> --public --confirm
+          else
+            echo "Repo already exists."
+          fi
+
+      - name: Add ADO remote and fetch
+        env:
           ADO_REPO_URL: "https://dev.azure.com/<ADO_ORG_NAME>/<ADO_PROJECT_NAME>/_git/<ADO_REPO_NAME>"
           ADO_PAT: ${{ secrets.ADO_PAT }}
         run: |
-          set -e # Exit immediately if a command exits with a non-zero status.
-
-          echo "Adding ADO remote..."
-          # Add the ADO repo as a remote, embedding the PAT for authentication.
-          # Ensure the ADO_PAT secret is configured in GitHub repository settings.
+          set -e
           git remote add --tags ado_mirror "https://PAT:${ADO_PAT}@${ADO_REPO_URL#https://}"
-
-          echo "Fetching from ADO mirror..."
-          # Fetch all branches and tags from ADO, prune deleted branches locally.
           git fetch ado_mirror --prune --tags --force
 
-          echo "Mirroring to GitHub origin..."
-          # Push all branches and tags to origin (this GitHub repo).
-          # The --mirror flag implies --force and ensures the remote exactly matches the local refs.
-          # WARNING: This overwrites the GitHub repo history and tags to match ADO.
-          git push origin --mirror
+      - name: Check for files >100MB in ADO repo
+        id: lfs_check
+        run: |
+          set -e
+          git checkout ado_mirror/main || git checkout ado_mirror/master
+          large_files=$(git ls-tree -r -l HEAD | awk '$4 > 104857600 {print $5}')
+          if [ -n "$large_files" ]; then
+            echo "LFS_NEEDED=true" >> $GITHUB_OUTPUT
+            echo "Large files detected:"
+            echo "$large_files"
+            # Add all large files to LFS, regardless of extension
+            for file in $large_files; do
+              path=$(git ls-tree -r -l HEAD | awk -v f="$file" '$5 == f {print $NF}')
+              if [ -n "$path" ]; then
+                git lfs track "$path"
+              fi
+            done
+            git add .gitattributes
+            git commit -m "Track all files >100MB with Git LFS" || true
+          else
+            echo "LFS_NEEDED=false" >> $GITHUB_OUTPUT
+          fi
 
-          echo "Mirroring complete."
+      - name: Apply Git LFS and rewrite history if needed
+        if: steps.lfs_check.outputs.LFS_NEEDED == 'true'
+        run: |
+          set -e
+          git lfs install
+          # Rewrite history to move large files to LFS
+          npx git-filter-repo --replace-text <(git lfs migrate info --everything | grep 'oid sha256:' | awk '{print $3}' | xargs -I{} echo '{}==>lfs')
+          git lfs push --all origin
+
+      - name: Mirror to GitHub origin
+        run: |
+          set -e
+          git remote set-url origin "https://x-access-token:${{ secrets.GH_PAT }}@github.com/<GITHUB_OWNER>/<GITHUB_REPO>.git"
+          git push origin --mirror
