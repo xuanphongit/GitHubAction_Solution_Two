@@ -6,13 +6,16 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      ApiEndpoint: https://env-api.override.com
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v4  # ⬅️ Latest checkout action!
 
     - name: Replace configs
       uses: ./.github/actions/replace-webconfig
       with:
         environment: smoke
-        keyvault-name: my-keyvault
+        keyvault-name: my-keyvault-phongmx
         file-path: ./my-app/web.config
+        replace-script-path: ./replace.sh

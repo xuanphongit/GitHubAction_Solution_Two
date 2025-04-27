@@ -23,30 +23,31 @@ runs:
   using: "composite"
   steps:
     - name: Azure Login
-      uses: azure/login@v1
+      uses: azure/login@v2
       with:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
     - name: Download secrets from Key Vault
-      shell: bash
-      run: |
-        echo "Fetching secrets from Key Vault..."
-        secrets=$(az keyvault secret list --vault-name "${{ inputs.keyvault-name }}" --query "[].id" -o tsv)
+      uses: azure/cli@v2  # ⬅️ New, we should use Azure CLI action to run `az` commands properly
+      with:
+        inlineScript: |
+          echo "Fetching secrets from Key Vault..."
+          secrets=$(az keyvault secret list --vault-name "${{ inputs.keyvault-name }}" --query "[].id" -o tsv)
 
-        if [ -z "$secrets" ]; then
-          echo "No secrets found in Key Vault."
-          exit 1
-        fi
+          if [ -z "$secrets" ]; then
+            echo "No secrets found in Key Vault."
+            exit 1
+          fi
 
-        > ${{ inputs.secrets-env-path }}
+          > "${{ inputs.secrets-env-path }}"
 
-        for secret_id in $secrets; do
-          name=$(basename "$secret_id")
-          value=$(az keyvault secret show --id "$secret_id" --query "value" -o tsv)
-          echo "$name=\"$value\"" >> ${{ inputs.secrets-env-path }}
-        done
+          for secret_id in $secrets; do
+            name=$(basename "$secret_id")
+            value=$(az keyvault secret show --id "$secret_id" --query "value" -o tsv)
+            echo "$name=\"$value\"" >> "${{ inputs.secrets-env-path }}"
+          done
 
     - name: Replace variables in web.config
       shell: bash
