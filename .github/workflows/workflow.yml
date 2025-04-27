@@ -13,8 +13,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      ApiEndpoint: https://env-api.override.com
 
     steps:
     - uses: actions/checkout@v4
