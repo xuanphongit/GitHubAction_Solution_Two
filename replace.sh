@@ -1,10 +1,28 @@
 #!/bin/bash
 set -e
 
+# Step 1: Check required arguments
+if [ $# -ne 4 ]; then
+  echo "⚠️ Error: Missing arguments. Usage:"
+  echo "Usage: ./replace.sh <ENVIRONMENT> <KEYVAULT_NAME> <WEB_CONFIG_PATH> <SECRETS_ENV_PATH>"
+  exit 1
+fi
+
 ENVIRONMENT=$1
 KEYVAULT_NAME=$2
 WEB_CONFIG_PATH=$3
 SECRETS_ENV_PATH=$4
+
+# Step 2: Validate input paths
+if [ ! -f "$WEB_CONFIG_PATH" ]; then
+  echo "⚠️ Error: web.config file '$WEB_CONFIG_PATH' not found. Exiting."
+  exit 1
+fi
+
+if [ ! -f "$SECRETS_ENV_PATH" ]; then
+  echo "⚠️ Error: secrets.env file '$SECRETS_ENV_PATH' not found. Exiting."
+  exit 1
+fi
 
 echo "🔵 Running replacement script..."
 echo "Environment: $ENVIRONMENT"
@@ -12,18 +30,14 @@ echo "KeyVault: $KEYVAULT_NAME"
 echo "Web Config Path: $WEB_CONFIG_PATH"
 echo "Secrets ENV Path: $SECRETS_ENV_PATH"
 
-# 1. Load secrets.env if it exists
-if [ -f "$SECRETS_ENV_PATH" ]; then
-  echo "🟡 Loading secrets from $SECRETS_ENV_PATH..."
-  cat "$SECRETS_ENV_PATH"
-  set -o allexport
-  source "$SECRETS_ENV_PATH"
-  set +o allexport
-else
-  echo "⚠️ Secrets env file $SECRETS_ENV_PATH not found. Continuing without preloaded secrets."
-fi
+# Step 3: Load secrets.env if it exists
+echo "🟡 Loading secrets from $SECRETS_ENV_PATH..."
+cat "$SECRETS_ENV_PATH"
+set -o allexport
+source "$SECRETS_ENV_PATH"
+set +o allexport
 
-# 2. Scan web.config for placeholders
+# Step 4: Scan web.config for placeholders
 echo "🟡 Scanning $WEB_CONFIG_PATH for placeholders..."
 cat "$WEB_CONFIG_PATH"
 
@@ -37,7 +51,7 @@ fi
 echo "🟢 Found placeholders:"
 echo "$placeholders"
 
-# 3. Replace each placeholder
+# Step 5: Replace each placeholder
 for placeholder in $placeholders; do
   echo "------------------------------------------"
   echo "🔵 Processing placeholder: $placeholder"
