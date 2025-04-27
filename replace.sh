@@ -15,6 +15,7 @@ if [ ! -f "$INPUT_FILE" ]; then
 fi
 
 # Find all unique placeholders of the form #{value}#
+# Allow any case (uppercase, lowercase, mixed) with alphanumeric and underscores
 PLACEHOLDERS=$(grep -o '#{[a-zA-Z0-9_]\+}#' "$INPUT_FILE" | sed 's/#{\([^}]\+\)}#/\1/g' | sort -u)
 
 if [ -z "$PLACEHOLDERS" ]; then
@@ -35,7 +36,7 @@ replace_placeholder() {
         # Perform replacement
         sed -i "s/#{$key}#/$escaped_value/g" "$INPUT_FILE"
         echo "Replaced #{$key}# with $var_value"
-        # Export to GITHUB_ENV (uppercase key)
+        # Export to GITHUB_ENV (uppercase key for consistency)
         echo "${key^^}=$var_value" >> "$GITHUB_ENV"
     else
         echo "Warning: Environment variable $key is not set. Skipping #{$key}#."
