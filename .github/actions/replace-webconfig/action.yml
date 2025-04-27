@@ -33,7 +33,7 @@ runs:
           source .env
           set +o allexport
       shell: bash
-      
+
     - name: Replace variables in web.config
       shell: bash
       run: |
@@ -48,7 +48,4 @@ runs:
 
         chmod +x "${{ inputs.replace-script-path }}"
         "${{ inputs.replace-script-path }}" \
-          "${{ inputs.environment }}" \
-          "${{ inputs.keyvault-name }}" \
-          "${{ inputs.file-path }}" \
-          "${{ inputs.secrets-env-path }}"
+          "${{ inputs.file-path }}" 
