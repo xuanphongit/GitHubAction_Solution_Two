@@ -1,26 +1,83 @@
-name: Import Repository
+# .github/workflows/create-repo.yml
+name: Create New GitHub Repository
 
+# Allow manual triggering from the Actions tab
 on:
-  workflow_dispatch: # Cho phép chạy thủ công
+  workflow_dispatch:
+    inputs:
+      repo_name:
+        description: 'Name for the new repository (e.g., my-awesome-project)'
+        required: true
+        type: string
+      owner:
+        description: 'GitHub username or organization to own the new repo (defaults to the repo where the action runs if blank)'
+        required: false # Optional, defaults to the context repository's owner
+        type: string
+      visibility:
+        description: 'Visibility of the new repository'
+        required: true
+        default: 'private'
+        type: choice
+        options:
+        - private
+        - public
+        # - internal # Uncomment if your org supports internal repos
+      description:
+        description: 'A short description for the repository'
+        required: false
+        type: string
 
 jobs:
-  import-repo:
+  create_repository:
     runs-on: ubuntu-latest
     steps:
-      - name: Send Import Request
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-          VCS_URL: "https://thienthutula1109.visualstudio.com/phongmx/_git/First%20Repo"
-          OWNER: "xuanphongit"
-          REPO_NAME: "phongmxgithub"
-          VISIBILITY: "public"
-          SOURCE_USERNAME: "xuanphongit1109@gmail.com"
-          SOURCE_ACCESS_TOKEN: "xuanphongit1109@" # Lưu ý: Lưu token này trong Secrets
+      - name: Determine Repository Owner
+        id: owner_step
         run: |
-          curl -X POST \
-            -H "Authorization: token $GH_TOKEN" \
-            -H "Accept: text/html" \
-            -H "Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryhhTR4q2J1ocmCTgj" \
-            -H "github-verified-fetch: true" \
-            --data-binary $'------WebKitFormBoundaryhhTR4q2J1ocmCTgj\r\nContent-Disposition: form-data; name="vcs_url"\r\n\r\n${VCS_URL}\r\n------WebKitFormBoundaryhhTR4q2J1ocmCTgj\r\nContent-Disposition: form-data; name="owner"\r\n\r\n${OWNER}\r\n------WebKitFormBoundaryhhTR4q2J1ocmCTgj\r\nContent-Disposition: form-data; name="repository[name]"\r\n\r\n${REPO_NAME}\r\n------WebKitFormBoundaryhhTR4q2J1ocmCTgj\r\nContent-Disposition: form-data; name="repository[visibility]"\r\n\r\n${VISIBILITY}\r\n------WebKitFormBoundaryhhTR4q2J1ocmCTgj\r\nContent-Disposition: form-data; name="source_username"\r\n\r\n${SOURCE_USERNAME}\r\n------WebKitFormBoundaryhhTR4q2J1ocmCTgj\r\nContent-Disposition: form-data; name="source_access_token"\r\n\r\n${SOURCE_ACCESS_TOKEN}\r\n------WebKitFormBoundaryhhTR4q2J1ocmCTgj--\r\n' \
-            https://github.com/new/import
+          # If owner input is provided, use it. Otherwise, use the owner of the repository where the workflow runs.
+          if [[ -n "${{ github.event.inputs.owner }}" ]]; then
+            echo "owner=${{ github.event.inputs.owner }}" >> $GITHUB_OUTPUT
+          else
+            echo "owner=${{ github.repository_owner }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Repository using GitHub CLI
+        env:
+          # Use a PAT stored as a secret. This PAT needs 'repo' scope.
+          # IMPORTANT: Do NOT hardcode tokens here. Use GitHub Secrets.
+          GH_TOKEN: ${{ secrets.ADMIN_GITHUB_PAT }} # Use a secret named ADMIN_GITHUB_PAT or similar
+          REPO_OWNER: ${{ steps.owner_step.outputs.owner }}
+          REPO_NAME: ${{ github.event.inputs.repo_name }}
+          VISIBILITY: ${{ github.event.inputs.visibility }}
+          DESCRIPTION: ${{ github.event.inputs.description }}
+        run: |
+          echo "Attempting to create repository: ${REPO_OWNER}/${REPO_NAME}"
+          echo "Visibility: ${VISIBILITY}"
+          echo "Description: ${DESCRIPTION}"
+
+          # Construct the full repository path
+          FULL_REPO_PATH="${REPO_OWNER}/${REPO_NAME}"
+
+          # Use gh cli to create the repository
+          # The --source=. argument is a dummy to prevent gh from trying to initialize the repo locally
+          gh repo create "${FULL_REPO_PATH}" \
+            --${VISIBILITY} \
+            ${DESCRIPTION:+--description "$DESCRIPTION"} \
+            --source=. --push # Use --push to avoid local repo creation prompts
+
+          # Check if the command was successful
+          if [ $? -eq 0 ]; then
+            echo "Successfully created repository: https://github.com/${FULL_REPO_PATH}"
+          else
+            # Check if the repository already exists (gh repo create exits with 1 if it exists)
+            gh repo view "${FULL_REPO_PATH}" > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+              echo "Repository https://github.com/${FULL_REPO_PATH} already exists."
+              # Decide if this is an error or acceptable (e.g., exit 0 if existing is okay)
+              # exit 0 # Uncomment if existing repo is not an error for your use case
+              exit 1 # Exit with error if existing repo should stop the workflow
+            else
+              echo "::error::Failed to create repository ${FULL_REPO_PATH}. Check PAT permissions and input values."
+              exit 1
+            fi
+          fi
