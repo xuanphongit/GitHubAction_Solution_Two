@@ -59,3 +59,11 @@ jobs:
         run: |
           chmod +x replace.sh
           ./replace.sh web.config
+
+
+      - name: Upload modified web.config as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: modified-web-config
+          path: web.config
+          retention-days: 7
