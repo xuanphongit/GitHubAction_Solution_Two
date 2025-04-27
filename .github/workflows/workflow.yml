@@ -23,11 +23,9 @@ jobs:
       uses: azure/login@v2
       with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-  
     - name: Install jq
       run: sudo apt-get update && sudo apt-get install -y jq
       shell: bash
-
     - name: Export variables from smoke environment
       env:
         VARS_CONTEXT: ${{ toJson(vars) }}
@@ -35,12 +33,6 @@ jobs:
         echo "Exporting variables from smoke environment..."
         echo "$VARS_CONTEXT" | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> $GITHUB_ENV
 
-    - name: Export secrets from smoke environment (optional)
-      env:
-        SECRETS_CONTEXT: ${{ toJson(secrets) }}
-      run: |
-        echo "Exporting secrets from smoke environment..."
-        echo "$SECRETS_CONTEXT" | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> $GITHUB_ENV
 
     - name: Print environment variables (for debugging, avoid in production)
       run: |
