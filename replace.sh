@@ -19,10 +19,6 @@ if [ ! -f "$WEB_CONFIG_PATH" ]; then
   exit 1
 fi
 
-if [ ! -f "$SECRETS_ENV_PATH" ]; then
-  echo "⚠️ Error: secrets.env file '$SECRETS_ENV_PATH' not found. Exiting."
-  exit 1
-fi
 
 echo "🔵 Running replacement script..."
 echo "Environment: $ENVIRONMENT"
