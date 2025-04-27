@@ -45,7 +45,7 @@ jobs:
         env:
           # Use a PAT stored as a secret. This PAT needs 'repo' scope.
           # IMPORTANT: Do NOT hardcode tokens here. Use GitHub Secrets.
-          GH_TOKEN: ${{ secrets.ADMIN_GITHUB_PAT }} # Use a secret named ADMIN_GITHUB_PAT or similar
+          GH_TOKEN: ${{ secrets.GH_PAT }} # Use a secret named ADMIN_GITHUB_PAT or similar
           REPO_OWNER: ${{ steps.owner_step.outputs.owner }}
           REPO_NAME: ${{ github.event.inputs.repo_name }}
           VISIBILITY: ${{ github.event.inputs.visibility }}
