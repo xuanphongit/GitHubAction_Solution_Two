@@ -1,3 +1,4 @@
+name: Get conffig from Key Vault and replace in web.config
 on:
   push:
     branches:
