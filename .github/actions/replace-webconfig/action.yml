@@ -26,14 +26,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Load .env file in Ubuntu environment
-      run: |
-          echo "Loading .env file into environment..."
-          set -o allexport
-          source .env
-          set +o allexport
-      shell: bash
-
     - name: Replace variables in web.config
       shell: bash
       run: |
