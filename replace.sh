@@ -41,10 +41,6 @@ for placeholder in $placeholders; do
   key=$(echo "$placeholder" | sed -e 's/^#{//' -e 's/}#$//')
   echo "Processing placeholder: $placeholder (key: $key)"
 
-  if [ "$key" == "Environment" ]; then
-    value="$ENVIRONMENT"
-    echo "Value for Environment: $value"
-  else
     # Check env first
     value=$(printenv "$key")
     echo "Value from environment for $key: $value"
@@ -59,7 +55,6 @@ for placeholder in $placeholders; do
       echo "Warning: '$key' not found in environment variables or secrets.env. Skipping replace."
       continue
     fi
-  fi
 
   escaped_value=$(printf '%s\n' "$value" | sed -e 's/[\/&]/\\&/g')
   echo "Replacing $placeholder with $value"
