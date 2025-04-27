@@ -22,30 +22,6 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: azure/login@v2
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-    - name: Download secrets from Key Vault
-      uses: azure/cli@v2  # ⬅️ New, we should use Azure CLI action to run `az` commands properly
-      with:
-        inlineScript: |
-          echo "Fetching secrets from Key Vault..."
-          secrets=$(az keyvault secret list --vault-name "${{ inputs.keyvault-name }}" --query "[].id" -o tsv)
-
-          if [ -z "$secrets" ]; then
-            echo "No secrets found in Key Vault."
-            exit 1
-          fi
-
-          > "${{ inputs.secrets-env-path }}"
-
-          for secret_id in $secrets; do
-            name=$(basename "$secret_id")
-            value=$(az keyvault secret show --id "$secret_id" --query "value" -o tsv)
-            echo "$name=\"$value\"" >> "${{ inputs.secrets-env-path }}"
-          done
-
     - name: Replace variables in web.config
       shell: bash
       run: |
