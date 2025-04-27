@@ -29,17 +29,19 @@ echo "Found placeholders: $PLACEHOLDERS"
 # Function to replace placeholder
 replace_placeholder() {
     local key="$1"
-    local var_value="${!key}"
+    # Convert placeholder key to uppercase to match GitHub variable
+    local upper_key="${key^^}"
+    local var_value="${!upper_key}"
     if [ -n "$var_value" ]; then
         # Escape special characters for sed
         escaped_value=$(echo "$var_value" | sed 's/[\/&]/\\&/g')
-        # Perform replacement
+        # Perform replacement using original placeholder (case-sensitive)
         sed -i "s/#{$key}#/$escaped_value/g" "$INPUT_FILE"
-        echo "Replaced #{$key}# with $var_value"
-        # Export to GITHUB_ENV (uppercase key for consistency)
-        echo "${key^^}=$var_value" >> "$GITHUB_ENV"
+        echo "Replaced #{$key}# with $var_value (using $upper_key)"
+        # Export to GITHUB_ENV (uppercase key)
+        echo "$upper_key=$var_value" >> "$GITHUB_ENV"
     else
-        echo "Warning: Environment variable $key is not set. Skipping #{$key}#."
+        echo "Warning: Environment variable $upper_key is not set. Skipping #{$key}#."
     fi
 }
 
