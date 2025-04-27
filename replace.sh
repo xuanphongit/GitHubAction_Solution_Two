@@ -23,6 +23,11 @@ else
   echo "Secrets env file $SECRETS_ENV_PATH not found. Continuing without preloaded secrets."
 fi
 
+# Print all environment variables for debugging
+echo "Current environment variables:"
+printenv
+# Check if the environment variable is set
+
 # 2. Scan web.config for placeholders
 echo "Scanning $WEB_CONFIG_PATH for placeholders..."
 cat "$WEB_CONFIG_PATH"
