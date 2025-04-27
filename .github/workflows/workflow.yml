@@ -17,6 +17,17 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Use variables
+    run: |
+      echo "repository variable : $REPOSITORY_VAR"
+      echo "organization variable : $ORGANIZATION_VAR"
+      echo "overridden variable : $OVERRIDE_VAR"
+      echo "variable from shell environment : $env_var"
+    env:
+      REPOSITORY_VAR: ${{ vars.REPOSITORY_VAR }}
+      ORGANIZATION_VAR: ${{ vars.ORGANIZATION_VAR }}
+      OVERRIDE_VAR: ${{ vars.OVERRIDE_VAR }}
+
     - name: Azure Login
       if: ${{ inputs.use-keyvault == 'true' }}
       uses: azure/login@v2
