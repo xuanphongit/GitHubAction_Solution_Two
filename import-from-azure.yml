@@ -1,0 +1,49 @@
+name: Import Azure DevOps Repo
+
+on:
+  workflow_dispatch: # Allows manual triggering from the Actions tab
+    inputs:
+      azure_repo_url:
+        description: 'Azure DevOps Repo HTTPS URL'
+        required: true
+        type: string
+      azure_username:
+        description: 'Azure DevOps Username (often email or any non-empty string when using PAT)'
+        required: true
+        type: string
+        default: 'PAT_User' # Provide a default or leave empty if username not strictly needed with PAT
+
+jobs:
+  import_repo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger GitHub Import API
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }} # GitHub PAT with repo scope
+          AZURE_PAT: ${{ secrets.AZURE_DEVOPS_PAT }} # Azure DevOps PAT with Code (Read) scope
+          AZURE_REPO_URL: ${{ github.event.inputs.azure_repo_url }}
+          AZURE_USERNAME: ${{ github.event.inputs.azure_username }}
+          GITHUB_REPO_API_URL: "https://api.github.com/repos/${{ github.repository }}/import" # API endpoint for the current repo
+        run: |
+          echo "Starting import for repository: ${{ github.repository }}"
+          echo "Importing from Azure DevOps URL: $AZURE_REPO_URL"
+
+          # Call the GitHub Import API
+          curl --request POST \
+          --url "$GITHUB_REPO_API_URL" \
+          --header "Accept: application/vnd.github.v3+json" \
+          --header "Authorization: token $GH_TOKEN" \
+          --data @- <<EOF
+          {
+            "vcs_url": "$AZURE_REPO_URL",
+            "vcs": "git",
+            "vcs_username": "$AZURE_USERNAME",
+            "vcs_password": "$AZURE_PAT"
+          }
+          EOF
+
+          echo "Import initiated. Check the status in your GitHub repository's settings or via the API."
+          # Note: This script only *starts* the import.
+          # It doesn't wait for completion or check the status.
+          # You can monitor progress manually or use subsequent API calls to check status:
+          # GET /repos/{owner}/{repo}/import

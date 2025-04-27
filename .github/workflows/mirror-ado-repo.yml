@@ -1,0 +1,53 @@
+name: Mirror ADO Repo to GitHub
+
+on:
+  # Schedule the workflow to run periodically
+  schedule:
+    # Runs every hour (adjust cron schedule as needed)
+    # See: https://crontab.guru/ for help with cron syntax
+    - cron: '0 * * * *'
+
+  # Allow manual triggering from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Target Repo (GitHub)
+        uses: actions/checkout@v4
+        with:
+          # Fetch all history and tags, not just the latest commit
+          fetch-depth: 0
+
+      - name: Set up Git Credentials and Configuration
+        run: |
+          # Set Git config for the workflow execution
+          git config --global user.name 'GitHub Actions Mirror'
+          git config --global user.email 'actions-mirror@github.com'
+
+      - name: Mirror ADO Repo
+        env:
+          # Construct the ADO repo URL using the secret PAT
+          # Replace <ADO_ORG_NAME>, <ADO_PROJECT_NAME>, <ADO_REPO_NAME> with your actual values
+          ADO_REPO_URL: "https://dev.azure.com/<ADO_ORG_NAME>/<ADO_PROJECT_NAME>/_git/<ADO_REPO_NAME>"
+          ADO_PAT: ${{ secrets.ADO_PAT }}
+        run: |
+          set -e # Exit immediately if a command exits with a non-zero status.
+
+          echo "Adding ADO remote..."
+          # Add the ADO repo as a remote, embedding the PAT for authentication.
+          # Ensure the ADO_PAT secret is configured in GitHub repository settings.
+          git remote add --tags ado_mirror "https://PAT:${ADO_PAT}@${ADO_REPO_URL#https://}"
+
+          echo "Fetching from ADO mirror..."
+          # Fetch all branches and tags from ADO, prune deleted branches locally.
+          git fetch ado_mirror --prune --tags --force
+
+          echo "Mirroring to GitHub origin..."
+          # Push all branches and tags to origin (this GitHub repo).
+          # The --mirror flag implies --force and ensures the remote exactly matches the local refs.
+          # WARNING: This overwrites the GitHub repo history and tags to match ADO.
+          git push origin --mirror
+
+          echo "Mirroring complete."
