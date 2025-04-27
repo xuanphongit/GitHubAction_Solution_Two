@@ -18,11 +18,16 @@ inputs:
     description: "Path to replace.sh script"
     required: false
     default: "./replace.sh"
+  use-keyvault:
+    description: "Flag to determine if Key Vault should be used"
+    required: false
+    default: "true"
 
 runs:
   using: "composite"
   steps:
     - name: Replace variables in web.config
+      if: ${{ inputs.use-keyvault == 'true' || inputs.use-keyvault == 'false' }}
       shell: bash
       run: |
         chmod +x "${{ inputs.replace-script-path }}"
