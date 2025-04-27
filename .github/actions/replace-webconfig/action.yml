@@ -27,9 +27,17 @@ runs:
   using: "composite"
   steps:
     - name: Replace variables in web.config
-      if: ${{ inputs.use-keyvault == 'true' || inputs.use-keyvault == 'false' }}
       shell: bash
       run: |
+        echo "Replacing variables in web.config..."
+        echo "Environment: ${{ inputs.environment }}"
+        echo "Key Vault Name: ${{ inputs.keyvault-name }}"
+        echo "File Path: ${{ inputs.file-path }}"
+        echo "Secrets Env Path: ${{ inputs.secrets-env-path }}"
+        echo "Replace Script Path: ${{ inputs.replace-script-path }}"
+        echo "Use Key Vault: ${{ inputs.use-keyvault }}"
+        echo "Running replace.sh script..."
+
         chmod +x "${{ inputs.replace-script-path }}"
         "${{ inputs.replace-script-path }}" \
           "${{ inputs.environment }}" \
