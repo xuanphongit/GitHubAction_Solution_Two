@@ -17,25 +17,21 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    
-    
-
     - name: Azure Login
       if: ${{ inputs.use-keyvault == 'true' }}
       uses: azure/login@v2
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Print all
-      run: |
-        echo "repository variable : $REPOSITORY_VAR"
-        echo "organization variable : $ORGANIZATION_VAR"
-        echo "overridden variable : $OVERRIDE_VAR"
-        echo "variable from shell environment : $env_var"
-      env:
-        REPOSITORY_VAR: ${{ vars.REPOSITORY_VAR }}
-        ORGANIZATION_VAR: ${{ vars.ORGANIZATION_VAR }}
-        OVERRIDE_VAR: ${{ vars.OVERRIDE_VAR }}
+    - name: Export secrets to environment variables
+      uses: 0ndt/envfile@v2
+      with:
+          secrets: ${{ toJson(secrets) }}
+
+    - name: Export variables to environment variables
+      uses: 0ndt/envfile@v2
+      with:
+          secrets: ${{ toJson(vars) }}
 
     - name: Download secrets from Key Vault
       if: ${{ inputs.use-keyvault == 'true' }}
