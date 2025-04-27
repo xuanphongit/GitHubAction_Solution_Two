@@ -8,7 +8,7 @@ on:
       use-keyvault:
         description: 'Use Azure Key Vault'
         required: false
-        default: 'true'
+        default: 'false'
 
 jobs:
   deploy:
