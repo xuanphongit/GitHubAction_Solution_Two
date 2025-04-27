@@ -12,6 +12,7 @@ on:
 
 jobs:
   deploy:
+    environment: smoke # Specify the smoke environment
     runs-on: ubuntu-latest
 
     steps:
@@ -21,17 +22,30 @@ jobs:
       if: ${{ inputs.use-keyvault == 'true' }}
       uses: azure/login@v2
       with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+  
+    - name: Install jq
+      run: sudo apt-get update && sudo apt-get install -y jq
+      shell: bash
 
-    - name: Export secrets to environment variables
-      uses: 0ndt/envfile@v2
-      with:
-          secrets: ${{ toJson(secrets) }}
+    - name: Export variables from smoke environment
+      env:
+        VARS_CONTEXT: ${{ toJson(vars) }}
+      run: |
+        echo "Exporting variables from smoke environment..."
+        echo "$VARS_CONTEXT" | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> $GITHUB_ENV
 
-    - name: Export variables to environment variables
-      uses: 0ndt/envfile@v2
-      with:
-          secrets: ${{ toJson(vars) }}
+    - name: Export secrets from smoke environment (optional)
+      env:
+        SECRETS_CONTEXT: ${{ toJson(secrets) }}
+      run: |
+        echo "Exporting secrets from smoke environment..."
+        echo "$SECRETS_CONTEXT" | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> $GITHUB_ENV
+
+    - name: Print environment variables (for debugging, avoid in production)
+      run: |
+        echo "Variables and secrets loaded from smoke environment:"
+        env | grep -v '^GITHUB_\|^RUNNER_\|^ACTIONS_' | sort
 
     - name: Download secrets from Key Vault
       if: ${{ inputs.use-keyvault == 'true' }}
