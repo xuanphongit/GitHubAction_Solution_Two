@@ -1,3 +1,5 @@
+name: Create Empty GitHub Repository
+
 on:
   workflow_dispatch:
     inputs:
@@ -39,6 +41,16 @@ jobs:
             echo "Git repository already initialized."
           fi
 
+      - name: Create Initial Commit
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "# Initial commit" > README.md
+            git add README.md
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git commit -m "Initial commit"
+          fi
+
       - name: Create GitHub Repository using GitHub CLI
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
@@ -48,8 +60,7 @@ jobs:
           
           gh repo create "${FULL_REPO_PATH}" \
             --${{ github.event.inputs.visibility }} \
-            ${DESCRIPTION:+--description "${{ github.event.inputs.description }}"} \
-            --source=. --push
+            ${DESCRIPTION:+--description "${{ github.event.inputs.description }}"}
 
           if [ $? -eq 0 ]; then
             echo "Successfully created repository: https://github.com/${FULL_REPO_PATH}"
