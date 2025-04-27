@@ -1,0 +1,55 @@
+name: 'Create Empty GitHub Repository'
+description: 'Creates an empty GitHub repository using the GitHub CLI'
+inputs:
+  owner:
+    description: 'Repository owner (optional)'
+    required: false
+    default: ''
+  repo_name:
+    description: 'Repository name'
+    required: true
+  visibility:
+    description: 'Repository visibility (public or private)'
+    required: true
+    default: 'public'
+  description:
+    description: 'Repository description (optional)'
+    required: false
+    default: ''
+  gh_token:
+    description: 'GitHub token'
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Determine Repository Owner
+      id: owner_step
+      shell: bash
+      run: |
+        if [[ -n "${{ inputs.owner }}" ]]; then
+          echo "owner=${{ inputs.owner }}" >> $GITHUB_OUTPUT
+        else
+          echo "owner=${{ github.repository_owner }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create GitHub Repository using GitHub CLI
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.gh_token }}
+      run: |
+        FULL_REPO_PATH="${{ steps.owner_step.outputs.owner }}/${{ inputs.repo_name }}"
+        gh repo create "${FULL_REPO_PATH}" \
+          --${{ inputs.visibility }} \
+          ${DESCRIPTION:+--description "${{ inputs.description }}"}
+        if [ $? -eq 0 ]; then
+          echo "Successfully created repository: https://github.com/${FULL_REPO_PATH}"
+        else
+          gh repo view "${FULL_REPO_PATH}" > /dev/null 2>&1
+          if [ $? -eq 0 ]; then
+            echo "Repository https://github.com/${FULL_REPO_PATH} already exists."
+            exit 0
+          else
+            echo "::error::Failed to create repository ${FULL_REPO_PATH}. Check PAT permissions and input values."
+            exit 1
+          fi
+        fi

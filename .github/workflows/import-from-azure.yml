@@ -23,54 +23,11 @@ jobs:
   create_repository:
     runs-on: ubuntu-latest
     steps:
-      - name: Determine Repository Owner
-        id: owner_step
-        run: |
-          if [[ -n "${{ github.event.inputs.owner }}" ]]; then
-            echo "owner=${{ github.event.inputs.owner }}" >> $GITHUB_OUTPUT
-          else
-            echo "owner=${{ github.repository_owner }}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Initialize Git Repository
-        run: |
-          if [ ! -d ".git" ]; then
-            echo "Initializing Git repository..."
-            git init
-          else
-            echo "Git repository already initialized."
-          fi
-
-      - name: Create Initial Commit
-        run: |
-          if [ -z "$(git status --porcelain)" ]; then
-            echo "# Initial commit" > README.md
-            git add README.md
-            git config user.name "github-actions"
-            git config user.email "github-actions@github.com"
-            git commit -m "Initial commit"
-          fi
-
-      - name: Create GitHub Repository using GitHub CLI
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT }}
-        run: |
-          echo "Attempting to create repository: ${{ steps.owner_step.outputs.owner }}/${{ github.event.inputs.repo_name }}"
-          FULL_REPO_PATH="${{ steps.owner_step.outputs.owner }}/${{ github.event.inputs.repo_name }}"
-          
-          gh repo create "${FULL_REPO_PATH}" \
-            --${{ github.event.inputs.visibility }} \
-            ${DESCRIPTION:+--description "${{ github.event.inputs.description }}"}
-
-          if [ $? -eq 0 ]; then
-            echo "Successfully created repository: https://github.com/${FULL_REPO_PATH}"
-          else
-            gh repo view "${FULL_REPO_PATH}" > /dev/null 2>&1
-            if [ $? -eq 0 ]; then
-              echo "Repository https://github.com/${FULL_REPO_PATH} already exists."
-              exit 0
-            else
-              echo "::error::Failed to create repository ${FULL_REPO_PATH}. Check PAT permissions and input values."
-              exit 1
-            fi
-          fi
+      - name: Create Empty GitHub Repository
+        uses: ./.github/actions/create-empty-repo
+        with:
+          owner: ${{ github.event.inputs.owner }}
+          repo_name: ${{ github.event.inputs.repo_name }}
+          visibility: ${{ github.event.inputs.visibility }}
+          description: ${{ github.event.inputs.description }}
+          gh_token: ${{ secrets.GH_PAT }}
