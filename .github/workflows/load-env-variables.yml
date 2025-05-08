@@ -4,32 +4,42 @@ on:
   workflow_dispatch:
     inputs:
       environments:
-        description: 'Comma-separated list of environments to load (e.g. smoke1,smoke2,smoke3,smoke4,smoke5)'
+        description: 'Comma-separated list of environments to load (e.g. smoke,smoke2,smoke3,smoke4,smoke5)'
         required: true
-        default: 'smoke1,smoke2,smoke3,smoke4,smoke5'
+        default: 'smoke,smoke2,smoke3,smoke4,smoke5'
 
 jobs:
   load-variables:
     runs-on: windows-latest
     strategy:
       matrix:
-        environment: ['smoke1', 'smoke2', 'smoke3', 'smoke4', 'smoke5']
+        environment: ['smoke', 'smoke2', 'smoke3', 'smoke4', 'smoke5']
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Load environment variables
+      - name: Export variables from environment
         shell: pwsh
         env:
-          ENV_NAME: ${{ matrix.environment }}
+          VARS_CONTEXT: ${{ toJson(vars) }}
         run: |
-          Write-Host "Loading variables from $env:ENV_NAME environment"
-          
-          # Get all environment variables and save to file
-          Get-ChildItem env: | Where-Object { $_.Name -notin @('PATH', 'HOME', 'USER', 'ENV_NAME') } | ForEach-Object {
-            "$env:ENV_NAME`_$($_.Name)=$($_.Value)" | Out-File -FilePath "$env:ENV_NAME`_vars.txt" -Append
-            Write-Host "Exported $env:ENV_NAME`_$($_.Name)"
+          Write-Host "Exporting variables from ${{ matrix.environment }} environment..."
+          $vars = $env:VARS_CONTEXT | ConvertFrom-Json
+          $vars.PSObject.Properties | ForEach-Object {
+            $key = "${{ matrix.environment }}_$($_.Name)"
+            $value = $_.Value
+            echo "$key=$value" >> $env:GITHUB_ENV
+            Write-Host "Exported $key"
+          }
+
+      - name: Save variables to file
+        shell: pwsh
+        run: |
+          # Get all variables with environment prefix and save to file
+          Get-ChildItem env: | Where-Object { $_.Name -like "${{ matrix.environment }}_*" } | ForEach-Object {
+            "$($_.Name)=$($_.Value)" | Out-File -FilePath "${{ matrix.environment }}_vars.txt" -Append
+            Write-Host "Saved $($_.Name)"
           }
 
       - name: Upload variables
@@ -46,11 +56,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download smoke1 variables
+      - name: Download smoke variables
         uses: actions/download-artifact@v4
         with:
-          name: smoke1-variables
-          path: smoke1_vars
+          name: smoke-variables
+          path: smoke_vars
 
       - name: Download smoke2 variables
         uses: actions/download-artifact@v4
@@ -79,21 +89,25 @@ jobs:
       - name: Merge variables to GITHUB_ENV
         shell: pwsh
         run: |
-          $environments = @('smoke1', 'smoke2', 'smoke3', 'smoke4', 'smoke5')
+          $environments = @('smoke', 'smoke2', 'smoke3', 'smoke4', 'smoke5')
           $mergedVars = @{}
           
           # Read and merge all variables
           foreach ($env in $environments) {
             Write-Host "Reading variables from $env"
-            Get-Content "$env`_vars/$env`_vars.txt" | ForEach-Object {
-              if ($_ -match "(.+?)=(.+)") {
-                $key = $matches[1]
-                $value = $matches[2]
-                $mergedVars[$key] = $value
-                # Export to GITHUB_ENV
-                echo "$key=$value" >> $env:GITHUB_ENV
-                Write-Host "Exported to GITHUB_ENV: $key"
+            if (Test-Path "$env`_vars/$env`_vars.txt") {
+              Get-Content "$env`_vars/$env`_vars.txt" | ForEach-Object {
+                if ($_ -match "(.+?)=(.+)") {
+                  $key = $matches[1]
+                  $value = $matches[2]
+                  $mergedVars[$key] = $value
+                  # Export to GITHUB_ENV
+                  echo "$key=$value" >> $env:GITHUB_ENV
+                  Write-Host "Exported to GITHUB_ENV: $key"
+                }
               }
+            } else {
+              Write-Host "Warning: $env`_vars/$env`_vars.txt not found"
             }
           }
           
