@@ -1,19 +1,13 @@
 name: Load Environment Variables
-
 on:
   workflow_dispatch:
-    inputs:
-      environments:
-        description: 'Comma-separated list of environments to load (e.g. smoke,smoke2,smoke3,smoke4,smoke5)'
-        required: true
-        default: 'smoke,smoke2,smoke3,smoke4,smoke5'
 
 jobs:
   load-variables:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        environment: ['smoke', 'smoke2', 'smoke3', 'smoke4', 'smoke5']
+        environment: [smoke, smoke2, smoke3, smoke4, smoke5]
     environment: ${{ matrix.environment }}
     
     steps:
@@ -24,11 +18,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Export variables from environment
+        id: export-vars
         env:
           VARS_CONTEXT: ${{ toJson(vars) }}
         run: |
           echo "Exporting variables from ${{ matrix.environment }} environment..."
-          echo "VARS_CONTEXT content: $VARS_CONTEXT"
           
           # Create empty file first
           touch "${{ matrix.environment }}_vars.txt"
@@ -62,75 +56,51 @@ jobs:
         with:
           name: ${{ matrix.environment }}-variables
           path: ${{ matrix.environment }}_vars.txt
+          retention-days: 1
 
   merge-and-update:
     runs-on: windows-latest
     needs: load-variables
+    environment: production
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download smoke variables
+      - name: Download all environment variables
         uses: actions/download-artifact@v4
         with:
-          name: smoke-variables
-          path: smoke_vars
-
-      - name: Download smoke2 variables
-        uses: actions/download-artifact@v4
-        with:
-          name: smoke2-variables
-          path: smoke2_vars
-
-      - name: Download smoke3 variables
-        uses: actions/download-artifact@v4
-        with:
-          name: smoke3-variables
-          path: smoke3_vars
-
-      - name: Download smoke4 variables
-        uses: actions/download-artifact@v4
-        with:
-          name: smoke4-variables
-          path: smoke4_vars
-
-      - name: Download smoke5 variables
-        uses: actions/download-artifact@v4
-        with:
-          name: smoke5-variables
-          path: smoke5_vars
+          path: env_vars
+          pattern: '*-variables'
+          merge-multiple: true
 
       - name: Merge variables to GITHUB_ENV
         shell: pwsh
         run: |
-          $environments = @('smoke', 'smoke2', 'smoke3', 'smoke4', 'smoke5')
           $mergedVars = @{}
+          $envFiles = Get-ChildItem -Path "env_vars" -Filter "*_vars.txt"
           
-          # Read and merge all variables
-          foreach ($env in $environments) {
-            Write-Host "Reading variables from $env"
-            if (Test-Path "$env`_vars/$env`_vars.txt") {
-              $content = Get-Content "$env`_vars/$env`_vars.txt"
-              Write-Host "Found $($content.Count) variables in $env"
-              
-              $content | ForEach-Object {
-                if ($_ -match "(.+?)=(.+)") {
-                  $key = $matches[1]
-                  $value = $matches[2]
-                  $mergedVars[$key] = $value
-                  # Export to GITHUB_ENV
-                  echo "$key=$value" >> $env:GITHUB_ENV
-                  Write-Host "Exported to GITHUB_ENV: $key"
-                }
+          Write-Host "Found $($envFiles.Count) environment files"
+          
+          foreach ($file in $envFiles) {
+            Write-Host "Processing $($file.Name)"
+            $content = Get-Content $file.FullName
+            Write-Host "Found $($content.Count) variables in $($file.Name)"
+            
+            $content | ForEach-Object {
+              if ($_ -match "(.+?)=(.+)") {
+                $key = $matches[1]
+                $value = $matches[2]
+                $mergedVars[$key] = $value
+                # Export to GITHUB_ENV
+                echo "$key=$value" >> $env:GITHUB_ENV
+                Write-Host "Exported to GITHUB_ENV: $key"
               }
-            } else {
-              Write-Host "Warning: $env`_vars/$env`_vars.txt not found"
             }
           }
           
           # Save merged variables to a file for reference
-          $mergedVars.GetEnumerator() | ForEach-Object {
+          $mergedVars.GetEnumerator() | Sort-Object Key | ForEach-Object {
             "$($_.Key)=$($_.Value)" | Out-File -FilePath "merged_vars.txt" -Append
           }
           Write-Host "All variables have been merged and exported to GITHUB_ENV"
@@ -140,8 +110,9 @@ jobs:
         run: |
           # Check if web.config exists
           if (Test-Path "web.config") {
-            # Create a backup of web.config
-            Copy-Item "web.config" "web.config.backup"
+            # Create a backup of web.config with timestamp
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            Copy-Item "web.config" "web.config.backup_$timestamp"
             
             # Read the current web.config content
             $webConfig = Get-Content "web.config" -Raw
