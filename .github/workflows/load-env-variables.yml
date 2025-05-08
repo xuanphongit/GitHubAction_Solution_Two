@@ -151,9 +151,19 @@ jobs:
               if ($_ -match "(.+?)=(.+)") {
                 $key = $matches[1]
                 $value = $matches[2] -replace '([\/&])', '\$1'
-                $pattern = "<add key=`"$key`".*?\/>"
-                $replacement = "<add key=`"$key`" value=`"$value`"\/>"
-                $webConfig = $webConfig -replace $pattern, $replacement
+                
+                # Replace both patterns:
+                # 1. <add key="key" value="..." />
+                # 2. #{key}#
+                $pattern1 = "<add key=`"$key`".*?\/>"
+                $replacement1 = "<add key=`"$key`" value=`"$value`"\/>"
+                $webConfig = $webConfig -replace $pattern1, $replacement1
+                
+                $pattern2 = "#{$key}#"
+                $replacement2 = $value
+                $webConfig = $webConfig -replace $pattern2, $replacement2
+                
+                Write-Host "Replacing patterns for key: $key"
               }
             }
             
