@@ -56,72 +56,12 @@ jobs:
           path: ${{ matrix.environment }}_vars.txt
           retention-days: 1
 
-  merge-variables:
+  merge-configs:
     name: Merge Variables
     runs-on: windows-latest
     needs: load-variables
     environment: production
-    outputs:
-      success: ${{ steps.merge-vars.outputs.success }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download all environment variables
-        uses: actions/download-artifact@v4
-        with:
-          path: env_vars
-          pattern: '*-variables'
-          merge-multiple: true
-
-      - name: Merge variables
-        id: merge-vars
-        shell: pwsh
-        run: |
-          try {
-              # Process all variable files
-              $mergedVars = @{}
-              $envFiles = Get-ChildItem -Path "env_vars" -Filter "*_vars.txt"
-              
-              Write-Host "Found $($envFiles.Count) environment files"
-              
-              foreach ($file in $envFiles) {
-                  Write-Host "Processing $($file.Name)"
-                  Get-Content $file.FullName | ForEach-Object {
-                      if ($_ -match "(.+?)=(.+)") {
-                          $mergedVars[$matches[1]] = $matches[2]
-                      }
-                  }
-              }
-              
-              # Save merged variables
-              $mergedVars.GetEnumerator() | Sort-Object Key | ForEach-Object {
-                  "$($_.Key)=$($_.Value)" | Out-File -FilePath "merged_vars.txt" -Append
-              }
-              
-              Write-Host "Successfully merged $($mergedVars.Count) variables"
-              echo "success=true" >> $env:GITHUB_OUTPUT
-          }
-          catch {
-              Write-Error $_
-              echo "success=false" >> $env:GITHUB_OUTPUT
-              exit 1
-          }
-
-      - name: Upload merged variables
-        uses: actions/upload-artifact@v4
-        with:
-          name: merged-variables
-          path: merged_vars.txt
-          retention-days: 1
-
-  merge-configs:
-    name: Merge Variables
-    runs-on: windows-latest
-    needs: merge-variables
-    environment: production
-    if: needs.merge-variables.outputs.success == 'true'
+    if: needs.load-variables.outputs.has_variables == 'true'
     outputs:
       success: ${{ steps.merge-vars.outputs.success }}
     
