@@ -10,54 +10,52 @@ on:
 
 jobs:
   load-variables:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         environment: ['smoke', 'smoke2', 'smoke3', 'smoke4', 'smoke5']
+    environment: ${{ matrix.environment }}
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
       - name: Export variables from environment
-        shell: pwsh
         env:
           VARS_CONTEXT: ${{ toJson(vars) }}
         run: |
-          Write-Host "Exporting variables from ${{ matrix.environment }} environment..."
-          $vars = $env:VARS_CONTEXT | ConvertFrom-Json
-          $vars.PSObject.Properties | ForEach-Object {
-            $key = "${{ matrix.environment }}_$($_.Name)"
-            $value = $_.Value
-            echo "$key=$value" >> $env:GITHUB_ENV
-            Write-Host "Exported $key"
-          }
-
-      - name: Save variables to file
-        shell: pwsh
-        run: |
-          # Create empty file first
-          New-Item -Path "${{ matrix.environment }}_vars.txt" -ItemType File -Force
+          echo "Exporting variables from ${{ matrix.environment }} environment..."
+          echo "VARS_CONTEXT content: $VARS_CONTEXT"
           
-          # Get all variables with environment prefix and save to file
-          Get-ChildItem env: | Where-Object { $_.Name -like "${{ matrix.environment }}_*" } | ForEach-Object {
-            "$($_.Name)=$($_.Value)" | Out-File -FilePath "${{ matrix.environment }}_vars.txt" -Append
-            Write-Host "Saved $($_.Name)"
-          }
+          # Create empty file first
+          touch "${{ matrix.environment }}_vars.txt"
+          
+          # Export variables using jq
+          if [ -n "$VARS_CONTEXT" ]; then
+            echo "$VARS_CONTEXT" | jq -r 'to_entries[] | "\(.key)=\(.value)"' | while IFS='=' read -r key value; do
+              # Export to GITHUB_ENV with environment prefix
+              echo "${{ matrix.environment }}_$key=$value" >> $GITHUB_ENV
+              # Save to file
+              echo "${{ matrix.environment }}_$key=$value" >> "${{ matrix.environment }}_vars.txt"
+              echo "Exported and saved: ${{ matrix.environment }}_$key"
+            done
+          else
+            echo "Warning: No variables found in vars context for ${{ matrix.environment }}"
+            echo "NO_VARIABLES_FOUND=true" >> "${{ matrix.environment }}_vars.txt"
+          fi
 
-          # Verify file exists and has content
-          if (Test-Path "${{ matrix.environment }}_vars.txt") {
-            $content = Get-Content "${{ matrix.environment }}_vars.txt"
-            Write-Host "File contains $($content.Count) variables"
-            if ($content.Count -eq 0) {
-              Write-Host "Warning: No variables were found for ${{ matrix.environment }}"
-              # Add a dummy variable to ensure file is not empty
-              "NO_VARIABLES_FOUND=true" | Out-File -FilePath "${{ matrix.environment }}_vars.txt" -Append
-            }
-          } else {
-            Write-Host "Error: Failed to create ${{ matrix.environment }}_vars.txt"
+      - name: Verify variables file
+        run: |
+          if [ -f "${{ matrix.environment }}_vars.txt" ]; then
+            echo "File contains $(wc -l < "${{ matrix.environment }}_vars.txt") variables:"
+            cat "${{ matrix.environment }}_vars.txt"
+          else
+            echo "Error: Failed to create ${{ matrix.environment }}_vars.txt"
             exit 1
-          }
+          fi
 
       - name: Upload variables
         uses: actions/upload-artifact@v4
@@ -113,7 +111,10 @@ jobs:
           foreach ($env in $environments) {
             Write-Host "Reading variables from $env"
             if (Test-Path "$env`_vars/$env`_vars.txt") {
-              Get-Content "$env`_vars/$env`_vars.txt" | ForEach-Object {
+              $content = Get-Content "$env`_vars/$env`_vars.txt"
+              Write-Host "Found $($content.Count) variables in $env"
+              
+              $content | ForEach-Object {
                 if ($_ -match "(.+?)=(.+)") {
                   $key = $matches[1]
                   $value = $matches[2]
