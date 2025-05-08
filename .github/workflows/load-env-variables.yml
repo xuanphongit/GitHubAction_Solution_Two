@@ -38,7 +38,7 @@ jobs:
           name: ${{ matrix.environment }}-variables
           path: ${{ matrix.environment }}_vars.txt
 
-  update-web-config:
+  merge-and-update:
     runs-on: windows-latest
     needs: load-variables
     
@@ -46,14 +46,62 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download all environment variables
+      - name: Download smoke1 variables
+        uses: actions/download-artifact@v4
+        with:
+          name: smoke1-variables
+          path: smoke1_vars
+
+      - name: Download smoke2 variables
+        uses: actions/download-artifact@v4
+        with:
+          name: smoke2-variables
+          path: smoke2_vars
+
+      - name: Download smoke3 variables
+        uses: actions/download-artifact@v4
+        with:
+          name: smoke3-variables
+          path: smoke3_vars
+
+      - name: Download smoke4 variables
+        uses: actions/download-artifact@v4
+        with:
+          name: smoke4-variables
+          path: smoke4_vars
+
+      - name: Download smoke5 variables
+        uses: actions/download-artifact@v4
+        with:
+          name: smoke5-variables
+          path: smoke5_vars
+
+      - name: Merge variables to GITHUB_ENV
         shell: pwsh
         run: |
           $environments = @('smoke1', 'smoke2', 'smoke3', 'smoke4', 'smoke5')
+          $mergedVars = @{}
+          
+          # Read and merge all variables
           foreach ($env in $environments) {
-            Write-Host "Downloading variables for $env"
-            actions/download-artifact@v4 --name "$env-variables" --path "$env`_vars"
+            Write-Host "Reading variables from $env"
+            Get-Content "$env`_vars/$env`_vars.txt" | ForEach-Object {
+              if ($_ -match "(.+?)=(.+)") {
+                $key = $matches[1]
+                $value = $matches[2]
+                $mergedVars[$key] = $value
+                # Export to GITHUB_ENV
+                echo "$key=$value" >> $env:GITHUB_ENV
+                Write-Host "Exported to GITHUB_ENV: $key"
+              }
+            }
           }
+          
+          # Save merged variables to a file for reference
+          $mergedVars.GetEnumerator() | ForEach-Object {
+            "$($_.Key)=$($_.Value)" | Out-File -FilePath "merged_vars.txt" -Append
+          }
+          Write-Host "All variables have been merged and exported to GITHUB_ENV"
 
       - name: Update web.config
         shell: pwsh
@@ -66,26 +114,20 @@ jobs:
             # Read the current web.config content
             $webConfig = Get-Content "web.config" -Raw
             
-            # Get all environment files
-            $environments = @('smoke1', 'smoke2', 'smoke3', 'smoke4', 'smoke5')
-            
-            # Update web.config with variables from each environment
-            foreach ($env in $environments) {
-              Write-Host "Updating web.config with $env variables"
-              Get-Content "$env`_vars/$env`_vars.txt" | ForEach-Object {
-                if ($_ -match "$env`_(.+?)=(.+)") {
-                  $key = $matches[1]
-                  $value = $matches[2] -replace '([\/&])', '\$1'
-                  $pattern = "<add key=`"$key`".*?\/>"
-                  $replacement = "<add key=`"$key`" value=`"$value`"\/>"
-                  $webConfig = $webConfig -replace $pattern, $replacement
-                }
+            # Update web.config with merged variables
+            Get-Content "merged_vars.txt" | ForEach-Object {
+              if ($_ -match "(.+?)=(.+)") {
+                $key = $matches[1]
+                $value = $matches[2] -replace '([\/&])', '\$1'
+                $pattern = "<add key=`"$key`".*?\/>"
+                $replacement = "<add key=`"$key`" value=`"$value`"\/>"
+                $webConfig = $webConfig -replace $pattern, $replacement
               }
             }
             
             # Save the updated content back to web.config
             $webConfig | Set-Content "web.config"
-            Write-Host "web.config has been updated"
+            Write-Host "web.config has been updated with merged variables"
           } else {
             Write-Host "web.config not found"
             exit 1
@@ -96,4 +138,12 @@ jobs:
         run: |
           if (Test-Path "web.config") {
             Get-Content "web.config"
+          }
+
+      - name: Show merged variables
+        shell: pwsh
+        run: |
+          if (Test-Path "merged_vars.txt") {
+            Write-Host "Merged variables:"
+            Get-Content "merged_vars.txt"
           } 
