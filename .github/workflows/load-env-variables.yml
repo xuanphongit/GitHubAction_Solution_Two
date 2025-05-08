@@ -147,17 +147,34 @@ jobs:
 
       - name: Azure Login
         uses: azure/login@v1
+        continue-on-error: true
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Load secrets from Key Vault
+        continue-on-error: true
         shell: pwsh
         run: |
-          $secrets = az keyvault secret list --vault-name ${{ secrets.KEY_VAULT_NAME }} --query "[].name" -o tsv
-          foreach ($secret in $secrets) {
-              $value = az keyvault secret show --vault-name ${{ secrets.KEY_VAULT_NAME }} --name $secret --query "value" -o tsv
-              echo "$secret=$value" >> $env:GITHUB_ENV
+          try {
+              $secrets = az keyvault secret list --vault-name ${{ secrets.KEY_VAULT_NAME }} --query "[].name" -o tsv
+              if ($LASTEXITCODE -eq 0) {
+                  foreach ($secret in $secrets) {
+                      $value = az keyvault secret show --vault-name ${{ secrets.KEY_VAULT_NAME }} --name $secret --query "value" -o tsv
+                      if ($LASTEXITCODE -eq 0) {
+                          echo "$secret=$value" >> $env:GITHUB_ENV
+                          Write-Host "Successfully loaded secret: $secret"
+                      } else {
+                          Write-Warning "Failed to load secret: $secret"
+                      }
+                  }
+              } else {
+                  Write-Warning "Failed to list secrets from Key Vault"
+              }
           }
+          catch {
+              Write-Warning "Error loading secrets from Key Vault: $_"
+          }
+          Write-Host "Continuing with next tasks..."
 
       - name: Replace in web.config
         id: replace-web-config
