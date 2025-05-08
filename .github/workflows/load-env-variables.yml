@@ -1,0 +1,99 @@
+name: Load Environment Variables
+
+on:
+  workflow_dispatch:
+    inputs:
+      environments:
+        description: 'Comma-separated list of environments to load (e.g. smoke1,smoke2,smoke3,smoke4,smoke5)'
+        required: true
+        default: 'smoke1,smoke2,smoke3,smoke4,smoke5'
+
+jobs:
+  load-variables:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        environment: ['smoke1', 'smoke2', 'smoke3', 'smoke4', 'smoke5']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Load environment variables
+        shell: pwsh
+        env:
+          ENV_NAME: ${{ matrix.environment }}
+        run: |
+          Write-Host "Loading variables from $env:ENV_NAME environment"
+          
+          # Get all environment variables and save to file
+          Get-ChildItem env: | Where-Object { $_.Name -notin @('PATH', 'HOME', 'USER', 'ENV_NAME') } | ForEach-Object {
+            "$env:ENV_NAME`_$($_.Name)=$($_.Value)" | Out-File -FilePath "$env:ENV_NAME`_vars.txt" -Append
+            Write-Host "Exported $env:ENV_NAME`_$($_.Name)"
+          }
+
+      - name: Upload variables
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.environment }}-variables
+          path: ${{ matrix.environment }}_vars.txt
+
+  update-web-config:
+    runs-on: windows-latest
+    needs: load-variables
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all environment variables
+        shell: pwsh
+        run: |
+          $environments = @('smoke1', 'smoke2', 'smoke3', 'smoke4', 'smoke5')
+          foreach ($env in $environments) {
+            Write-Host "Downloading variables for $env"
+            actions/download-artifact@v4 --name "$env-variables" --path "$env`_vars"
+          }
+
+      - name: Update web.config
+        shell: pwsh
+        run: |
+          # Check if web.config exists
+          if (Test-Path "web.config") {
+            # Create a backup of web.config
+            Copy-Item "web.config" "web.config.backup"
+            
+            # Read the current web.config content
+            $webConfig = Get-Content "web.config" -Raw
+            
+            # Get all environment files
+            $environments = @('smoke1', 'smoke2', 'smoke3', 'smoke4', 'smoke5')
+            
+            # Update web.config with variables from each environment
+            foreach ($env in $environments) {
+              Write-Host "Updating web.config with $env variables"
+              Get-Content "$env`_vars/$env`_vars.txt" | ForEach-Object {
+                if ($_ -match "$env`_(.+?)=(.+)") {
+                  $key = $matches[1]
+                  $value = $matches[2] -replace '([\/&])', '\$1'
+                  $pattern = "<add key=`"$key`".*?\/>"
+                  $replacement = "<add key=`"$key`" value=`"$value`"\/>"
+                  $webConfig = $webConfig -replace $pattern, $replacement
+                }
+              }
+            }
+            
+            # Save the updated content back to web.config
+            $webConfig | Set-Content "web.config"
+            Write-Host "web.config has been updated"
+          } else {
+            Write-Host "web.config not found"
+            exit 1
+          }
+
+      - name: Show updated web.config
+        shell: pwsh
+        run: |
+          if (Test-Path "web.config") {
+            Get-Content "web.config"
+          } 
