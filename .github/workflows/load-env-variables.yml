@@ -36,11 +36,11 @@ jobs:
           # Export variables using jq
           if [ -n "$VARS_CONTEXT" ]; then
             echo "$VARS_CONTEXT" | jq -r 'to_entries[] | "\(.key)=\(.value)"' | while IFS='=' read -r key value; do
-              # Export to GITHUB_ENV with environment prefix
-              echo "${{ matrix.environment }}_$key=$value" >> $GITHUB_ENV
+              # Export to GITHUB_ENV without environment prefix
+              echo "$key=$value" >> $GITHUB_ENV
               # Save to file
-              echo "${{ matrix.environment }}_$key=$value" >> "${{ matrix.environment }}_vars.txt"
-              echo "Exported and saved: ${{ matrix.environment }}_$key"
+              echo "$key=$value" >> "${{ matrix.environment }}_vars.txt"
+              echo "Exported and saved: $key"
             done
           else
             echo "Warning: No variables found in vars context for ${{ matrix.environment }}"
