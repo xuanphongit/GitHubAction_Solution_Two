@@ -36,10 +36,27 @@ jobs:
       - name: Save variables to file
         shell: pwsh
         run: |
+          # Create empty file first
+          New-Item -Path "${{ matrix.environment }}_vars.txt" -ItemType File -Force
+          
           # Get all variables with environment prefix and save to file
           Get-ChildItem env: | Where-Object { $_.Name -like "${{ matrix.environment }}_*" } | ForEach-Object {
             "$($_.Name)=$($_.Value)" | Out-File -FilePath "${{ matrix.environment }}_vars.txt" -Append
             Write-Host "Saved $($_.Name)"
+          }
+
+          # Verify file exists and has content
+          if (Test-Path "${{ matrix.environment }}_vars.txt") {
+            $content = Get-Content "${{ matrix.environment }}_vars.txt"
+            Write-Host "File contains $($content.Count) variables"
+            if ($content.Count -eq 0) {
+              Write-Host "Warning: No variables were found for ${{ matrix.environment }}"
+              # Add a dummy variable to ensure file is not empty
+              "NO_VARIABLES_FOUND=true" | Out-File -FilePath "${{ matrix.environment }}_vars.txt" -Append
+            }
+          } else {
+            Write-Host "Error: Failed to create ${{ matrix.environment }}_vars.txt"
+            exit 1
           }
 
       - name: Upload variables
