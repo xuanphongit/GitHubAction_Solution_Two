@@ -4,11 +4,15 @@ on:
 
 jobs:
   load-variables:
+    name: Load Variables from ${{ matrix.environment }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
         environment: [smoke, smoke2, smoke3, smoke4, smoke5]
+      fail-fast: false
     environment: ${{ matrix.environment }}
+    outputs:
+      has_variables: ${{ steps.check-vars.outputs.has_variables }}
     
     steps:
       - name: Checkout code
@@ -17,38 +21,32 @@ jobs:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
+      - name: Check for variables
+        id: check-vars
+        env:
+          VARS_CONTEXT: ${{ toJson(vars) }}
+        run: |
+          echo "has_variables=$([ ! -z "$VARS_CONTEXT" ] && [ "$VARS_CONTEXT" != "{}" ] && echo "true" || echo "false")" >> $GITHUB_OUTPUT
+          echo "Found variables: $([ ! -z "$VARS_CONTEXT" ] && [ "$VARS_CONTEXT" != "{}" ] && echo "yes" || echo "no")"
+
       - name: Export variables from environment
+        if: steps.check-vars.outputs.has_variables == 'true'
         id: export-vars
         env:
           VARS_CONTEXT: ${{ toJson(vars) }}
         run: |
           echo "Exporting variables from ${{ matrix.environment }} environment..."
-          
-          # Create empty file first
           touch "${{ matrix.environment }}_vars.txt"
           
-          # Export variables using jq
-          if [ -n "$VARS_CONTEXT" ]; then
-            echo "$VARS_CONTEXT" | jq -r 'to_entries[] | "\(.key)=\(.value)"' | while IFS='=' read -r key value; do
-              # Export to GITHUB_ENV without environment prefix
-              echo "$key=$value" >> $GITHUB_ENV
-              # Save to file
-              echo "$key=$value" >> "${{ matrix.environment }}_vars.txt"
-              echo "Exported and saved: $key"
-            done
-          else
-            echo "Warning: No variables found in vars context for ${{ matrix.environment }}"
-            echo "NO_VARIABLES_FOUND=true" >> "${{ matrix.environment }}_vars.txt"
-          fi
-
-      - name: Verify variables file
-        run: |
-          if [ -f "${{ matrix.environment }}_vars.txt" ]; then
-            echo "File contains $(wc -l < "${{ matrix.environment }}_vars.txt") variables:"
+          echo "$VARS_CONTEXT" | jq -r 'to_entries[] | "\(.key)=\(.value)"' | tee "${{ matrix.environment }}_vars.txt"
+          
+          # Verify file content
+          if [ -s "${{ matrix.environment }}_vars.txt" ]; then
+            echo "Successfully exported $(wc -l < "${{ matrix.environment }}_vars.txt") variables"
             cat "${{ matrix.environment }}_vars.txt"
           else
-            echo "Error: Failed to create ${{ matrix.environment }}_vars.txt"
-            exit 1
+            echo "Warning: No variables were exported"
+            echo "NO_VARIABLES_FOUND=true" > "${{ matrix.environment }}_vars.txt"
           fi
 
       - name: Upload variables
@@ -58,10 +56,13 @@ jobs:
           path: ${{ matrix.environment }}_vars.txt
           retention-days: 1
 
-  merge-and-update:
+  merge-variables:
+    name: Merge Variables
     runs-on: windows-latest
     needs: load-variables
     environment: production
+    outputs:
+      success: ${{ steps.merge-vars.outputs.success }}
     
     steps:
       - name: Checkout code
@@ -74,89 +75,232 @@ jobs:
           pattern: '*-variables'
           merge-multiple: true
 
-      - name: Merge variables to GITHUB_ENV
+      - name: Merge variables
+        id: merge-vars
         shell: pwsh
         run: |
-          $mergedVars = @{}
-          $envFiles = Get-ChildItem -Path "env_vars" -Filter "*_vars.txt"
-          
-          Write-Host "Found $($envFiles.Count) environment files"
-          
-          foreach ($file in $envFiles) {
-            Write-Host "Processing $($file.Name)"
-            $content = Get-Content $file.FullName
-            Write-Host "Found $($content.Count) variables in $($file.Name)"
-            
-            $content | ForEach-Object {
-              if ($_ -match "(.+?)=(.+)") {
-                $key = $matches[1]
-                $value = $matches[2]
-                $mergedVars[$key] = $value
-                # Export to GITHUB_ENV
-                echo "$key=$value" >> $env:GITHUB_ENV
-                Write-Host "Exported to GITHUB_ENV: $key"
+          try {
+              # Process all variable files
+              $mergedVars = @{}
+              $envFiles = Get-ChildItem -Path "env_vars" -Filter "*_vars.txt"
+              
+              Write-Host "Found $($envFiles.Count) environment files"
+              
+              foreach ($file in $envFiles) {
+                  Write-Host "Processing $($file.Name)"
+                  Get-Content $file.FullName | ForEach-Object {
+                      if ($_ -match "(.+?)=(.+)") {
+                          $mergedVars[$matches[1]] = $matches[2]
+                      }
+                  }
               }
-            }
-          }
-          
-          # Save merged variables to a file for reference
-          $mergedVars.GetEnumerator() | Sort-Object Key | ForEach-Object {
-            "$($_.Key)=$($_.Value)" | Out-File -FilePath "merged_vars.txt" -Append
-          }
-          Write-Host "All variables have been merged and exported to GITHUB_ENV"
-
-      - name: Update web.config
-        shell: pwsh
-        run: |
-          # Check if web.config exists
-          if (Test-Path "web.config") {
-            # Create a backup of web.config with timestamp
-            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-            Copy-Item "web.config" "web.config.backup_$timestamp"
-            
-            # Read the current web.config content
-            $webConfig = Get-Content "web.config" -Raw
-            
-            # Update web.config with merged variables
-            Get-Content "merged_vars.txt" | ForEach-Object {
-              if ($_ -match "(.+?)=(.+)") {
-                $key = $matches[1]
-                $value = $matches[2] -replace '([\/&])', '\$1'
-                
-                # Replace both patterns:
-                # 1. <add key="key" value="..." />
-                # 2. #{key}#
-                $pattern1 = "<add key=`"$key`".*?\/>"
-                $replacement1 = "<add key=`"$key`" value=`"$value`"\/>"
-                $webConfig = $webConfig -replace $pattern1, $replacement1
-                
-                $pattern2 = "#{$key}#"
-                $replacement2 = $value
-                $webConfig = $webConfig -replace $pattern2, $replacement2
-                
-                Write-Host "Replacing patterns for key: $key"
+              
+              # Save merged variables
+              $mergedVars.GetEnumerator() | Sort-Object Key | ForEach-Object {
+                  "$($_.Key)=$($_.Value)" | Out-File -FilePath "merged_vars.txt" -Append
               }
-            }
-            
-            # Save the updated content back to web.config
-            $webConfig | Set-Content "web.config"
-            Write-Host "web.config has been updated with merged variables"
-          } else {
-            Write-Host "web.config not found"
-            exit 1
+              
+              Write-Host "Successfully merged $($mergedVars.Count) variables"
+              echo "success=true" >> $env:GITHUB_OUTPUT
+          }
+          catch {
+              Write-Error $_
+              echo "success=false" >> $env:GITHUB_OUTPUT
+              exit 1
           }
 
-      - name: Show updated web.config
+      - name: Upload merged variables
+        uses: actions/upload-artifact@v4
+        with:
+          name: merged-variables
+          path: merged_vars.txt
+          retention-days: 1
+
+  merge-configs:
+    name: Merge Variables
+    runs-on: windows-latest
+    needs: merge-variables
+    environment: production
+    if: needs.merge-variables.outputs.success == 'true'
+    outputs:
+      success: ${{ steps.merge-vars.outputs.success }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all environment variables
+        uses: actions/download-artifact@v4
+        with:
+          path: env_vars
+          pattern: '*-variables'
+          merge-multiple: true
+
+      - name: Merge variables
+        id: merge-vars
         shell: pwsh
         run: |
-          if (Test-Path "web.config") {
-            Get-Content "web.config"
+          try {
+              # Process all variable files
+              $mergedVars = @{}
+              $envFiles = Get-ChildItem -Path "env_vars" -Filter "*_vars.txt"
+              
+              Write-Host "Found $($envFiles.Count) environment files"
+              
+              foreach ($file in $envFiles) {
+                  Write-Host "Processing $($file.Name)"
+                  Get-Content $file.FullName | ForEach-Object {
+                      if ($_ -match "(.+?)=(.+)") {
+                          $mergedVars[$matches[1]] = $matches[2]
+                      }
+                  }
+              }
+              
+              # Save merged variables
+              $mergedVars.GetEnumerator() | Sort-Object Key | ForEach-Object {
+                  "$($_.Key)=$($_.Value)" | Out-File -FilePath "merged_vars.txt" -Append
+              }
+              
+              Write-Host "Successfully merged $($mergedVars.Count) variables"
+              echo "success=true" >> $env:GITHUB_OUTPUT
+          }
+          catch {
+              Write-Error $_
+              echo "success=false" >> $env:GITHUB_OUTPUT
+              exit 1
           }
 
-      - name: Show merged variables
+      - name: Upload merged variables
+        uses: actions/upload-artifact@v4
+        with:
+          name: merged-variables
+          path: merged_vars.txt
+          retention-days: 1
+
+  replace-configs:
+    name: Replace Config Files
+    runs-on: windows-latest
+    needs: merge-configs
+    environment: production
+    if: needs.merge-configs.outputs.success == 'true'
+    outputs:
+      success: ${{ steps.replace-configs.outputs.success }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download merged variables
+        uses: actions/download-artifact@v4
+        with:
+          name: merged-variables
+          path: .
+
+      - name: Load variables to GITHUB_ENV
         shell: pwsh
         run: |
-          if (Test-Path "merged_vars.txt") {
-            Write-Host "Merged variables:"
-            Get-Content "merged_vars.txt"
+          Get-Content "merged_vars.txt" | ForEach-Object {
+              if ($_ -match "(.+?)=(.+)") {
+                  echo "$($matches[1])=$($matches[2])" >> $env:GITHUB_ENV
+              }
+          }
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Load secrets from Key Vault
+        shell: pwsh
+        run: |
+          $secrets = az keyvault secret list --vault-name ${{ secrets.KEY_VAULT_NAME }} --query "[].name" -o tsv
+          foreach ($secret in $secrets) {
+              $value = az keyvault secret show --vault-name ${{ secrets.KEY_VAULT_NAME }} --name $secret --query "value" -o tsv
+              echo "$secret=$value" >> $env:GITHUB_ENV
+          }
+
+      - name: Replace in web.config
+        id: replace-web-config
+        shell: pwsh
+        run: |
+          try {
+              $content = Get-Content "web.config" -Raw
+              
+              # Get all environment variables
+              Get-ChildItem env: | Where-Object { $_.Name -notlike "GITHUB_*" } | ForEach-Object {
+                  $key = $_.Name
+                  $value = $_.Value
+                  $value = $value -replace '([\/&])', '\$1'
+                  
+                  # Replace both patterns
+                  $content = $content -replace "<add key=`"$key`".*?/>", "<add key=`"$key`" value=`"$value`"/>"
+                  $content = $content -replace "#{$key}#", $value
+              }
+              
+              $content | Set-Content "web.config"
+              echo "success=true" >> $env:GITHUB_OUTPUT
+          }
+          catch {
+              Write-Error $_
+              echo "success=false" >> $env:GITHUB_OUTPUT
+              exit 1
+          }
+
+      - name: Replace in web2.config
+        id: replace-web2-config
+        shell: pwsh
+        run: |
+          try {
+              $content = Get-Content "web2.config" -Raw
+              
+              # Get all environment variables
+              Get-ChildItem env: | Where-Object { $_.Name -notlike "GITHUB_*" } | ForEach-Object {
+                  $key = $_.Name
+                  $value = $_.Value
+                  $value = $value -replace '([\/&])', '\$1'
+                  
+                  # Replace both patterns
+                  $content = $content -replace "<add key=`"$key`".*?/>", "<add key=`"$key`" value=`"$value`"/>"
+                  $content = $content -replace "#{$key}#", $value
+              }
+              
+              $content | Set-Content "web2.config"
+              echo "success=true" >> $env:GITHUB_OUTPUT
+          }
+          catch {
+              Write-Error $_
+              echo "success=false" >> $env:GITHUB_OUTPUT
+              exit 1
+          }
+
+      - name: Upload updated configs
+        uses: actions/upload-artifact@v4
+        with:
+          name: updated-configs
+          path: |
+            web.config
+            web2.config
+          retention-days: 1
+
+  show-results:
+    name: Show Results
+    runs-on: windows-latest
+    needs: replace-configs
+    environment: production
+    if: needs.replace-configs.outputs.success == 'true'
+    
+    steps:
+      - name: Download updated configs
+        uses: actions/download-artifact@v4
+        with:
+          name: updated-configs
+          path: configs
+
+      - name: Show results
+        shell: pwsh
+        run: |
+          Write-Host "`nUpdated Config Files:"
+          Get-ChildItem "configs" -File | ForEach-Object {
+              Write-Host "`n$($_.Name):"
+              Get-Content $_.FullName
           } 

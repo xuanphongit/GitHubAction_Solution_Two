@@ -1,0 +1,123 @@
+name: 'Merge Config Files'
+description: 'Merge variables and secrets into config files'
+
+inputs:
+  config-files:
+    description: 'List of config files to process (comma-separated)'
+    required: true
+  output-dir:
+    description: 'Output directory for processed configs'
+    required: false
+    default: 'configs'
+
+outputs:
+  success:
+    description: 'Whether the merge was successful'
+    value: ${{ steps.merge-configs.outputs.success }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Merge all config files
+      id: merge-configs
+      shell: pwsh
+      run: |
+        # Function to process config file
+        function Process-ConfigFile {
+            param (
+                [string]$ConfigPath,
+                [hashtable]$Variables
+            )
+            
+            if (-not (Test-Path $ConfigPath)) {
+                Write-Error "Config file not found: $ConfigPath"
+                return $null
+            }
+
+            try {
+                $content = Get-Content $ConfigPath -Raw
+                $fileName = Split-Path $ConfigPath -Leaf
+                
+                # Replace variables in content
+                foreach ($key in $Variables.Keys) {
+                    $value = $Variables[$key]
+                    $value = $value -replace '([\/&])', '\$1'
+                    
+                    # Replace both patterns
+                    $content = $content -replace "<add key=`"$key`".*?/>", "<add key=`"$key`" value=`"$value`"/>"
+                    $content = $content -replace "#{$key}#", $value
+                }
+                
+                return @{
+                    FileName = $fileName
+                    Content = $content
+                }
+            }
+            catch {
+                Write-Error "Failed to process config file $ConfigPath : $_"
+                return $null
+            }
+        }
+
+        try {
+            # Load merged variables
+            $mergedVars = @{}
+            
+            # Load variables from merged_vars.txt
+            if (Test-Path "merged_vars.txt") {
+                Get-Content "merged_vars.txt" | ForEach-Object {
+                    if ($_ -match "(.+?)=(.+)") {
+                        $mergedVars[$matches[1]] = $matches[2]
+                    }
+                }
+                Write-Host "Loaded $(($mergedVars.Keys | Measure-Object).Count) variables from merged_vars.txt"
+            }
+            
+            # Load secrets from secrets.txt
+            if (Test-Path "secrets.txt") {
+                Get-Content "secrets.txt" | ForEach-Object {
+                    if ($_ -match "(.+?)=(.+)") {
+                        $mergedVars[$matches[1]] = $matches[2]
+                    }
+                }
+                Write-Host "Loaded $(($mergedVars.Keys | Measure-Object).Count) total variables (including secrets)"
+            }
+            
+            # Create output directory
+            $outputDir = "${{ inputs.output-dir }}"
+            New-Item -ItemType Directory -Force -Path $outputDir
+            
+            # Process all config files
+            $configFiles = "${{ inputs.config-files }}" -split ','
+            
+            $processedConfigs = @{}
+            
+            foreach ($configFile in $configFiles) {
+                Write-Host "Processing config file: $configFile"
+                $result = Process-ConfigFile -ConfigPath $configFile -Variables $mergedVars
+                
+                if ($result) {
+                    $outputPath = Join-Path $outputDir $result.FileName
+                    $result.Content | Set-Content $outputPath
+                    $processedConfigs[$result.FileName] = $outputPath
+                    Write-Host "Successfully processed $($result.FileName)"
+                }
+            }
+            
+            # Create a summary file
+            $summary = @{
+                Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+                ProcessedFiles = $processedConfigs.Keys
+                VariablesCount = $mergedVars.Count
+                Variables = $mergedVars.Keys
+            }
+            
+            $summary | ConvertTo-Json | Set-Content (Join-Path $outputDir "summary.json")
+            
+            echo "success=true" >> $env:GITHUB_OUTPUT
+        }
+        catch {
+            Write-Error $_
+            echo "success=false" >> $env:GITHUB_OUTPUT
+            exit 1
+        } 
