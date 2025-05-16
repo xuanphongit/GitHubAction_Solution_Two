@@ -1,0 +1,125 @@
+name: 'Workflow Monitor'
+description: 'Monitors workflow execution and collects metrics'
+inputs:
+  metrics-type:
+    description: 'Type of metrics to collect (performance, resources, execution)'
+    required: true
+    default: 'all'
+  alert-threshold:
+    description: 'Threshold for alerting (in seconds)'
+    required: false
+    default: '300'
+outputs:
+  metrics-result:
+    description: 'Collected metrics'
+    value: ${{ steps.monitor.outputs.result }}
+runs:
+  using: "composite"
+  steps:
+    - name: Monitor Workflow
+      id: monitor
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        
+        function Get-PerformanceMetrics {
+          $metrics = @{
+            CPU = (Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue
+            Memory = (Get-Counter '\Memory\Available MBytes').CounterSamples.CookedValue
+            DiskIO = (Get-Counter '\PhysicalDisk(_Total)\Disk Bytes/sec').CounterSamples.CookedValue
+          }
+          return $metrics
+        }
+        
+        function Get-ResourceUsage {
+          $process = Get-Process -Id $PID
+          $metrics = @{
+            CPU = $process.CPU
+            Memory = $process.WorkingSet64 / 1MB
+            Threads = $process.Threads.Count
+            Handles = $process.HandleCount
+          }
+          return $metrics
+        }
+        
+        function Get-ExecutionMetrics {
+          $startTime = [DateTime]::Now
+          $metrics = @{
+            StartTime = $startTime
+            Duration = 0
+            Steps = @()
+          }
+          
+          # Get workflow steps
+          $steps = Get-ChildItem env: | Where-Object { $_.Name -like 'GITHUB_STEP_*' }
+          foreach ($step in $steps) {
+            $metrics.Steps += @{
+              Name = $step.Name
+              Value = $step.Value
+            }
+          }
+          
+          return $metrics
+        }
+        
+        function Test-AlertThreshold {
+          param(
+            [hashtable]$Metrics,
+            [int]$Threshold
+          )
+          
+          $alerts = @()
+          
+          if ($Metrics.Duration -gt $Threshold) {
+            $alerts += @{
+              Type = 'DurationExceeded'
+              Value = $Metrics.Duration
+              Threshold = $Threshold
+            }
+          }
+          
+          if ($Metrics.CPU -gt 80) {
+            $alerts += @{
+              Type = 'HighCPU'
+              Value = $Metrics.CPU
+              Threshold = 80
+            }
+          }
+          
+          if ($Metrics.Memory -lt 100) {
+            $alerts += @{
+              Type = 'LowMemory'
+              Value = $Metrics.Memory
+              Threshold = 100
+            }
+          }
+          
+          return $alerts
+        }
+        
+        $metricsType = "${{ inputs.metrics-type }}"
+        $alertThreshold = [int]"${{ inputs.alert-threshold }}"
+        
+        $metrics = @{
+          Performance = if ($metricsType -eq 'all' -or $metricsType -eq 'performance') { Get-PerformanceMetrics } else { $null }
+          Resources = if ($metricsType -eq 'all' -or $metricsType -eq 'resources') { Get-ResourceUsage } else { $null }
+          Execution = if ($metricsType -eq 'all' -or $metricsType -eq 'execution') { Get-ExecutionMetrics } else { $null }
+        }
+        
+        $alerts = Test-AlertThreshold -Metrics $metrics.Execution -Threshold $alertThreshold
+        
+        $result = @{
+          Metrics = $metrics
+          Alerts = $alerts
+          Timestamp = [DateTime]::Now
+        }
+        
+        $resultJson = ConvertTo-Json $result -Depth 10
+        echo "result=$resultJson" >> $env:GITHUB_OUTPUT
+        
+        if ($alerts.Count -gt 0) {
+          Write-Warning "Alerts detected: $($alerts | ConvertTo-Json)"
+        }
+        
+        Write-Host "Monitoring completed successfully"
+        exit 0 

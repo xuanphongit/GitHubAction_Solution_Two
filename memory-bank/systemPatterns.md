@@ -1,81 +1,97 @@
 # System Patterns
 
 ## Architecture Overview
-The system follows a modular workflow-based architecture using GitHub Actions, with clear separation of concerns:
+The system follows a modular design pattern with clear separation of concerns:
 
-```mermaid
-graph TD
-    A[Load Variables] --> B[Merge Configs]
-    B --> C[Replace Configs]
-    C --> D[Show Results]
-    E[Azure Key Vault] --> C
-```
+1. **Migration Core**
+   - Repository cloning
+   - History preservation
+   - Branch management
+   - Chunk-based pushing
 
-## Key Technical Decisions
+2. **Large File Handling**
+   - Git LFS integration
+   - BFG Repo Cleaner integration
+   - File size monitoring
+   - Historical data management
 
-### 1. Workflow Structure
-- Separate jobs for different responsibilities
-- Matrix strategy for parallel environment processing
-- Conditional execution based on job outputs
-- Artifact sharing between jobs
-
-### 2. Variable Management
-- Environment-specific variable loading
-- Centralized variable merging
-- Secure secret handling
-- Variable validation and error handling
-
-### 3. Configuration Processing
-- Support for multiple config file formats
-- Pattern-based placeholder replacement
-- XML structure preservation
-- Error handling and validation
-
-### 4. Security Patterns
-- Azure Key Vault integration
-- Secure credential handling
-- Environment isolation
-- Secret rotation support
+3. **Error Handling**
+   - Retry mechanism
+   - Timeout management
+   - Cleanup procedures
+   - Logging system
 
 ## Design Patterns
 
-### 1. Pipeline Pattern
-- Sequential job execution
-- Dependency management
-- Artifact passing
-- Error propagation
+### 1. Command Pattern
+- Each Git operation encapsulated in `run_git_command` function
+- Consistent error handling and retry logic
+- Timeout management for long-running operations
 
 ### 2. Strategy Pattern
-- Environment-specific variable loading
-- Configurable replacement strategies
-- Extensible secret management
+- Different strategies for handling large files:
+  - Git LFS for current files
+  - BFG for historical files
+- Configurable chunk sizes
+- Adjustable retry policies
 
 ### 3. Observer Pattern
-- Job status monitoring
-- Result validation
+- Comprehensive logging system
+- Progress tracking
 - Error reporting
-
-### 4. Factory Pattern
-- Config file processing
-- Variable merging
-- Secret retrieval
+- Status updates
 
 ## Component Relationships
 
-### 1. Workflow Components
-- `load-variables`: Initial variable loading
-- `merge-configs`: Variable consolidation
-- `replace-configs`: Configuration updates
-- `show-results`: Execution feedback
+```mermaid
+graph TD
+    A[GitHub Action] --> B[Migration Script]
+    B --> C[Git Operations]
+    B --> D[Large File Handler]
+    B --> E[Error Handler]
+    D --> F[Git LFS]
+    D --> G[BFG Cleaner]
+    E --> H[Logger]
+    C --> I[Chunk Manager]
+```
 
-### 2. Supporting Components
-- Azure Key Vault integration
-- GitHub Actions artifacts
-- Environment contexts
-- Configuration files
+## Error Handling Patterns
 
-### 3. Integration Points
-- GitHub Environments
-- Azure Key Vault
-- Configuration files
-- GitHub Actions API 
+1. **Retry Pattern**
+   - Configurable number of retries
+   - Exponential backoff
+   - Maximum timeout limits
+
+2. **Cleanup Pattern**
+   - Automatic cleanup on error
+   - Temporary file management
+   - Resource release
+
+3. **Logging Pattern**
+   - Timestamp-based logging
+   - Error context preservation
+   - Operation tracking
+
+## Security Patterns
+
+1. **Authentication**
+   - Token-based authentication
+   - Secure credential handling
+   - No hardcoded secrets
+
+2. **File Security**
+   - Safe file operations
+   - Proper cleanup
+   - Access control
+
+## Performance Patterns
+
+1. **Chunking Strategy**
+   - Configurable chunk sizes
+   - Memory-efficient processing
+   - Progress tracking
+
+2. **Resource Management**
+   - Git configuration optimization
+   - Memory usage control
+   - Disk space management 

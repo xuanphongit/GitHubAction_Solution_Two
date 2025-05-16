@@ -9,6 +9,9 @@ A robust system for managing environment variables across multiple environments 
 - 📝 **Flexible Configuration**: Support for both XML and placeholder-based configurations
 - 🔄 **Automated Workflow**: Streamlined process for variable loading, merging, and configuration updates
 - 🛡️ **Error Handling**: Robust error handling and validation throughout the process
+- 🔍 **Testing Infrastructure**: Comprehensive testing of environment variables and configurations
+- 🚨 **Security Scanning**: Automated security checks and compliance validation
+- 📊 **Monitoring**: Real-time workflow monitoring and metrics collection
 
 ## Prerequisites
 
@@ -53,30 +56,42 @@ Set up your environment variables in GitHub:
 ### 3. Run the Workflow
 The workflow can be triggered manually through GitHub Actions:
 1. Navigate to Actions tab
-2. Select "Load Environment Variables"
-3. Click "Run workflow"
+2. Select "Enhanced Environment Variable Management"
+3. Configure workflow inputs:
+   - Environment to process
+   - Whether to validate secrets
+   - Whether to perform security scan
+4. Click "Run workflow"
 
 ## Workflow Process
 
-1. **Load Variables**
-   - Loads variables from all configured environments
-   - Exports variables to environment context
-   - Handles missing or empty variables gracefully
+1. **Validation**
+   - Validates environment variables and configurations
+   - Checks for missing variables and secrets
+   - Handles validation errors with retry mechanism
 
-2. **Merge Configurations**
-   - Combines variables from different environments
-   - Resolves conflicts based on environment priority
-   - Creates a unified variable set
+2. **Security Scan**
+   - Performs comprehensive security checks
+   - Validates configuration security
+   - Checks for compliance requirements
+   - Handles security issues appropriately
 
-3. **Update Configurations**
-   - Replaces placeholders in web.config and web2.config
-   - Supports both XML and #{placeholder}# formats
-   - Maintains file structure and formatting
+3. **Monitoring**
+   - Collects performance metrics
+   - Monitors resource usage
+   - Tracks workflow execution
+   - Alerts on threshold violations
 
-4. **Secret Management**
-   - Retrieves secrets from Azure Key Vault
-   - Applies secrets to configurations
-   - Handles missing or inaccessible secrets gracefully
+4. **Process Variables**
+   - Loads variables from configured environments
+   - Merges variables from different environments
+   - Updates configuration files
+   - Handles processing errors with retry mechanism
+
+5. **Final Monitoring**
+   - Performs final workflow monitoring
+   - Collects execution metrics
+   - Generates workflow report
 
 ## Configuration Files
 
@@ -115,6 +130,8 @@ Script for replacing placeholders in configuration files.
 - Environment variables are properly scoped
 - Access is controlled through permissions
 - Sensitive data is handled securely
+- Regular security scans are performed
+- Compliance requirements are validated
 
 ## Contributing
 

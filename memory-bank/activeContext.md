@@ -1,74 +1,70 @@
 # Active Context
 
 ## Current Focus
-- Initial project setup and documentation
-- Memory Bank initialization
-- Core workflow implementation
-- Environment variable management system
+- Repository migration script optimization for GitHub Actions
+- Large file handling implementation
+- Error handling and logging improvements
 
 ## Recent Changes
-1. Created core workflow files:
-   - load-env-variables.yml
-   - workflow.yml
-   - mirror-ado-repo.yml
-   - import-from-azure.yml
+1. **Script Optimization**
+   - Added automatic dependency installation
+   - Improved Git configuration for large repositories
+   - Enhanced error handling and retry mechanism
 
-2. Implemented configuration files:
-   - web.config
-   - web2.config
-   - replace.sh
-   - azuredeploy.json
+2. **Large File Handling**
+   - Implemented Git LFS integration
+   - Added BFG Repo Cleaner for historical files
+   - Added file size checking and monitoring
 
-3. Set up GitHub Actions:
-   - Environment configurations
-   - Workflow triggers
-   - Job dependencies
-   - Artifact handling
+3. **GitHub Actions Integration**
+   - Created workflow file
+   - Added input parameters
+   - Implemented artifact upload for logs
 
 ## Active Decisions
-1. **Workflow Structure**
-   - Using matrix strategy for parallel processing
-   - Implementing conditional job execution
-   - Using artifacts for data sharing
+1. **Chunk Size**
+   - Default set to 1.5GB to stay safely under GitHub's 2GB limit
+   - Configurable via workflow inputs
+   - Balance between performance and safety
 
-2. **Variable Management**
-   - Centralized variable merging
-   - Environment-specific loading
-   - Secure secret handling
+2. **Large File Strategy**
+   - Current files: Move to Git LFS
+   - Historical files: Remove using BFG
+   - Size threshold: 100MB (GitHub's limit)
 
-3. **Configuration Processing**
-   - Supporting multiple file formats
-   - Implementing placeholder replacement
-   - Maintaining file structure
+3. **Error Handling**
+   - Maximum 3 retries for failed operations
+   - 1-hour timeout for Git operations
+   - Automatic cleanup on failure
 
 ## Next Steps
-1. **Documentation**
-   - Complete Memory Bank setup
-   - Document workflow patterns
-   - Create usage guidelines
+1. **Testing**
+   - Test with various repository sizes
+   - Verify large file handling
+   - Validate error scenarios
 
-2. **Testing**
-   - Test environment variable loading
-   - Verify configuration updates
-   - Validate secret management
+2. **Documentation**
+   - Update usage instructions
+   - Document error handling
+   - Add troubleshooting guide
 
-3. **Enhancement**
-   - Add error handling
-   - Improve logging
-   - Optimize performance
+3. **Improvements**
+   - Consider adding progress percentage
+   - Add more detailed logging
+   - Consider parallel processing for large repositories
 
 ## Current Considerations
-1. **Security**
-   - Secret handling
-   - Access control
-   - Data protection
+1. **Performance**
+   - Monitor memory usage
+   - Track execution time
+   - Optimize Git operations
 
-2. **Maintainability**
-   - Code organization
-   - Documentation
-   - Error handling
+2. **Reliability**
+   - Ensure proper cleanup
+   - Verify authentication
+   - Test error scenarios
 
-3. **Performance**
-   - Workflow optimization
-   - Resource usage
-   - Execution time 
+3. **User Experience**
+   - Clear error messages
+   - Detailed logging
+   - Progress tracking 

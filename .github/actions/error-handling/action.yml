@@ -1,0 +1,91 @@
+name: 'Error Handler'
+description: 'Centralized error handling for GitHub Actions workflows'
+inputs:
+  error-message:
+    description: 'The error message to handle'
+    required: true
+  severity:
+    description: 'Error severity level (INFO, WARNING, ERROR)'
+    required: true
+    default: 'ERROR'
+  retry-count:
+    description: 'Number of retries for transient errors'
+    required: false
+    default: '3'
+  retry-delay:
+    description: 'Delay between retries in seconds'
+    required: false
+    default: '5'
+outputs:
+  handled:
+    description: 'Whether the error was handled successfully'
+    value: ${{ steps.error-handler.outputs.handled }}
+runs:
+  using: "composite"
+  steps:
+    - name: Handle Error
+      id: error-handler
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        
+        function Write-Log {
+          param(
+            [string]$Message,
+            [string]$Severity
+          )
+          
+          $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+          $logMessage = "[$timestamp] [$Severity] $Message"
+          
+          switch ($Severity) {
+            'ERROR' { Write-Error $logMessage }
+            'WARNING' { Write-Warning $logMessage }
+            default { Write-Host $logMessage }
+          }
+        }
+        
+        function Test-TransientError {
+          param([string]$ErrorMessage)
+          
+          $transientPatterns = @(
+            'timeout',
+            'connection refused',
+            'temporary failure',
+            'rate limit exceeded'
+          )
+          
+          foreach ($pattern in $transientPatterns) {
+            if ($ErrorMessage -match $pattern) {
+              return $true
+            }
+          }
+          return $false
+        }
+        
+        $errorMessage = "${{ inputs.error-message }}"
+        $severity = "${{ inputs.severity }}"
+        $retryCount = [int]"${{ inputs.retry-count }}"
+        $retryDelay = [int]"${{ inputs.retry-delay }}"
+        
+        Write-Log -Message $errorMessage -Severity $severity
+        
+        if (Test-TransientError -ErrorMessage $errorMessage) {
+          for ($i = 1; $i -le $retryCount; $i++) {
+            Write-Log -Message "Retry attempt $i of $retryCount" -Severity 'INFO'
+            Start-Sleep -Seconds $retryDelay
+            
+            try {
+              # Add your retry logic here
+              Write-Log -Message "Retry successful" -Severity 'INFO'
+              echo "handled=true" >> $env:GITHUB_OUTPUT
+              exit 0
+            }
+            catch {
+              Write-Log -Message "Retry failed: $_" -Severity 'WARNING'
+            }
+          }
+        }
+        
+        echo "handled=false" >> $env:GITHUB_OUTPUT
+        exit 1 

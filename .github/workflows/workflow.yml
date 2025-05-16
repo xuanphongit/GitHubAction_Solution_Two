@@ -1,69 +1,149 @@
-name: Load Smoke Variables and Replace Placeholders in web.config
+name: Enhanced Environment Variable Management
 
 on:
-  workflow_dispatch: # Manual trigger; adjust as needed (e.g., push, pull_request)
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to process'
+        required: true
+        default: 'smoke'
+      validate-secrets:
+        description: 'Whether to validate secrets'
+        required: false
+        default: 'true'
+      security-scan:
+        description: 'Whether to perform security scan'
+        required: false
+        default: 'true'
 
 jobs:
-  load-smoke-vars:
+  validate:
     runs-on: ubuntu-latest
-    environment: smoke # Specify the smoke environment
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
-      - name: Export variables from smoke environment
-        env:
-          VARS_CONTEXT: ${{ toJson(vars) }}
-        run: |
-          echo "Exporting variables from smoke environment..."
-          echo "$VARS_CONTEXT" | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> $GITHUB_ENV
-
-      - name: Azure Login
-        uses: azure/login@v2
+      - uses: actions/checkout@v4
+      
+      - name: Validate Environment
+        uses: ./.github/actions/testing
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          config-path: 'web.config'
+          environment: ${{ github.event.inputs.environment }}
+          validate-secrets: ${{ github.event.inputs.validate-secrets }}
+        continue-on-error: true
+        id: validation
 
-      - name: Read all secrets from Azure Key Vault
-        uses: azure/CLI@v2
+      - name: Handle Validation Errors
+        if: steps.validation.outcome == 'failure'
+        uses: ./.github/actions/error-handling
         with:
-          inlineScript: |
-              echo "Listing all secrets in Key Vault..."
-              secrets=$(az keyvault secret list \
-                --vault-name "my-keyvault-phongmx" \
-                --query "[].name" \
-                --output tsv)
-              if [ -z "$secrets" ]; then
-                echo "Warning: No secrets found in Key Vault."
-              else
-                for secret in $secrets; do
-                  echo "Reading secret $secret from Key Vault..."
-                  value=$(az keyvault secret show \
-                    --vault-name "my-keyvault-phongmx" \
-                    --name "$secret" \
-                    --query "value" \
-                    --output tsv || echo "Failed to read secret $secret")
-                  if [ -n "$value" ]; then
-                    # Convert secret name to uppercase for consistency
-                    upper_secret="${secret^^}"
-                    echo "$upper_secret=$value" >> $GITHUB_ENV
-                  else
-                    echo "Warning: Secret $secret is empty or inaccessible."
-                  fi
-                done
-              fi
+          error-message: ${{ steps.validation.outputs.validation-result }}
+          severity: 'ERROR'
+          retry-count: '3'
+          retry-delay: '5'
 
-      - name: Run replace.sh
-        run: |
-          chmod +x replace.sh
-          ./replace.sh web.config
-
-
-      - name: Upload modified web.config as artifact
-        uses: actions/upload-artifact@v4
+  security:
+    needs: validate
+    if: ${{ github.event.inputs.security-scan == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Security Scan
+        uses: ./.github/actions/security
         with:
-          name: modified-web-config
-          path: web.config
-          retention-days: 7
+          scan-type: 'all'
+          fail-on-warning: 'true'
+        continue-on-error: true
+        id: security
+
+      - name: Handle Security Issues
+        if: steps.security.outcome == 'failure'
+        uses: ./.github/actions/error-handling
+        with:
+          error-message: ${{ steps.security.outputs.scan-result }}
+          severity: 'ERROR'
+          retry-count: '1'
+          retry-delay: '0'
+
+  monitor:
+    needs: [validate, security]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Monitor Workflow
+        uses: ./.github/actions/monitoring
+        with:
+          metrics-type: 'all'
+          alert-threshold: '300'
+        continue-on-error: true
+        id: monitoring
+
+      - name: Handle Monitoring Alerts
+        if: steps.monitoring.outcome == 'failure'
+        uses: ./.github/actions/error-handling
+        with:
+          error-message: ${{ steps.monitoring.outputs.metrics-result }}
+          severity: 'WARNING'
+          retry-count: '0'
+          retry-delay: '0'
+
+  process:
+    needs: [validate, security, monitor]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Load Environment Variables
+        uses: ./.github/actions/load-env-variables
+        with:
+          environment: ${{ github.event.inputs.environment }}
+        continue-on-error: true
+        id: load-vars
+
+      - name: Handle Loading Errors
+        if: steps.load-vars.outcome == 'failure'
+        uses: ./.github/actions/error-handling
+        with:
+          error-message: ${{ steps.load-vars.outputs.error }}
+          severity: 'ERROR'
+          retry-count: '3'
+          retry-delay: '5'
+
+      - name: Update Configurations
+        uses: ./.github/actions/replace-webconfig
+        with:
+          config-path: 'web.config'
+        continue-on-error: true
+        id: update-config
+
+      - name: Handle Config Update Errors
+        if: steps.update-config.outcome == 'failure'
+        uses: ./.github/actions/error-handling
+        with:
+          error-message: ${{ steps.update-config.outputs.error }}
+          severity: 'ERROR'
+          retry-count: '2'
+          retry-delay: '3'
+
+  final-monitor:
+    needs: process
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Final Workflow Monitor
+        uses: ./.github/actions/monitoring
+        with:
+          metrics-type: 'execution'
+          alert-threshold: '600'
+        continue-on-error: true
+        id: final-monitor
+
+      - name: Handle Final Monitoring Alerts
+        if: steps.final-monitor.outcome == 'failure'
+        uses: ./.github/actions/error-handling
+        with:
+          error-message: ${{ steps.final-monitor.outputs.metrics-result }}
+          severity: 'WARNING'
+          retry-count: '0'
+          retry-delay: '0'

@@ -1,0 +1,52 @@
+name: Migrate Repository
+
+on:
+  workflow_dispatch:
+    inputs:
+      azure_repo_url:
+        description: 'Azure DevOps Repository URL'
+        required: true
+      github_repo_url:
+        description: 'GitHub Repository URL'
+        required: true
+      chunk_size_gb:
+        description: 'Chunk size in GB'
+        required: false
+        default: '1.5'
+      timeout:
+        description: 'Timeout in seconds for git operations'
+        required: false
+        default: '3600'
+      max_retries:
+        description: 'Maximum number of retries for failed operations'
+        required: false
+        default: '3'
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Make script executable
+        run: chmod +x migrate-repo.sh
+
+      - name: Run migration script
+        env:
+          AZURE_PAT: ${{ secrets.AZURE_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./migrate-repo.sh \
+            -a "${{ github.event.inputs.azure_repo_url }}" \
+            -g "${{ github.event.inputs.github_repo_url }}" \
+            -s "${{ github.event.inputs.chunk_size_gb }}" \
+            -t "${{ github.event.inputs.timeout }}" \
+            -r "${{ github.event.inputs.max_retries }}"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: migration-logs
+          path: migration_*.log 

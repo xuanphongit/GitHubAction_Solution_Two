@@ -1,0 +1,169 @@
+name: 'Security Scanner'
+description: 'Performs security checks and compliance validation'
+inputs:
+  scan-type:
+    description: 'Type of security scan to perform (secrets, config, compliance)'
+    required: true
+    default: 'all'
+  fail-on-warning:
+    description: 'Whether to fail on security warnings'
+    required: false
+    default: 'true'
+outputs:
+  scan-result:
+    description: 'Result of the security scan'
+    value: ${{ steps.security-scan.outputs.result }}
+runs:
+  using: "composite"
+  steps:
+    - name: Security Scan
+      id: security-scan
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        
+        function Test-SecretExposure {
+          param(
+            [string]$Path
+          )
+          
+          $secretPatterns = @(
+            '(?i)(password|secret|key|token|credential)["\']?\s*[:=]\s*["\']?[^"\']+["\']?',
+            '(?i)(aws_access_key_id|aws_secret_access_key)["\']?\s*[:=]\s*["\']?[^"\']+["\']?',
+            '(?i)(api[_-]?key|apikey)["\']?\s*[:=]\s*["\']?[^"\']+["\']?'
+          )
+          
+          $exposedSecrets = @()
+          Get-ChildItem -Path $Path -Recurse -File | ForEach-Object {
+            $content = Get-Content $_.FullName -Raw
+            foreach ($pattern in $secretPatterns) {
+              if ($content -match $pattern) {
+                $exposedSecrets += @{
+                  File = $_.FullName
+                  Pattern = $pattern
+                  Line = $matches[0]
+                }
+              }
+            }
+          }
+          
+          return $exposedSecrets
+        }
+        
+        function Test-ConfigSecurity {
+          param(
+            [string]$ConfigPath
+          )
+          
+          $securityIssues = @()
+          
+          if (Test-Path $ConfigPath) {
+            $config = Get-Content $ConfigPath -Raw
+            
+            # Check for insecure configurations
+            $insecurePatterns = @(
+              'debug\s*=\s*true',
+              'trace\s*=\s*true',
+              'verbose\s*=\s*true'
+            )
+            
+            foreach ($pattern in $insecurePatterns) {
+              if ($config -match $pattern) {
+                $securityIssues += @{
+                  Type = 'InsecureConfig'
+                  Pattern = $pattern
+                  Line = $matches[0]
+                }
+              }
+            }
+          }
+          
+          return $securityIssues
+        }
+        
+        function Test-Compliance {
+          param(
+            [string]$Path
+          )
+          
+          $complianceIssues = @()
+          
+          # Check for required security headers
+          $requiredHeaders = @(
+            'X-Content-Type-Options',
+            'X-Frame-Options',
+            'X-XSS-Protection'
+          )
+          
+          Get-ChildItem -Path $Path -Recurse -File -Include *.config,*.json | ForEach-Object {
+            $content = Get-Content $_.FullName -Raw
+            foreach ($header in $requiredHeaders) {
+              if ($content -notmatch $header) {
+                $complianceIssues += @{
+                  Type = 'MissingHeader'
+                  Header = $header
+                  File = $_.FullName
+                }
+              }
+            }
+          }
+          
+          return $complianceIssues
+        }
+        
+        $scanType = "${{ inputs.scan-type }}"
+        $failOnWarning = [System.Convert]::ToBoolean("${{ inputs.fail-on-warning }}")
+        
+        $scanResult = @{
+          Success = $true
+          Warnings = @()
+          Errors = @()
+        }
+        
+        if ($scanType -eq 'all' -or $scanType -eq 'secrets') {
+          $exposedSecrets = Test-SecretExposure -Path '.'
+          if ($exposedSecrets.Count -gt 0) {
+            $scanResult.Errors += @{
+              Type = 'ExposedSecrets'
+              Details = $exposedSecrets
+            }
+            $scanResult.Success = $false
+          }
+        }
+        
+        if ($scanType -eq 'all' -or $scanType -eq 'config') {
+          $configIssues = Test-ConfigSecurity -ConfigPath 'web.config'
+          if ($configIssues.Count -gt 0) {
+            $scanResult.Warnings += @{
+              Type = 'ConfigSecurity'
+              Details = $configIssues
+            }
+            if ($failOnWarning) {
+              $scanResult.Success = $false
+            }
+          }
+        }
+        
+        if ($scanType -eq 'all' -or $scanType -eq 'compliance') {
+          $complianceIssues = Test-Compliance -Path '.'
+          if ($complianceIssues.Count -gt 0) {
+            $scanResult.Warnings += @{
+              Type = 'Compliance'
+              Details = $complianceIssues
+            }
+            if ($failOnWarning) {
+              $scanResult.Success = $false
+            }
+          }
+        }
+        
+        $resultJson = ConvertTo-Json $scanResult -Depth 10
+        echo "result=$resultJson" >> $env:GITHUB_OUTPUT
+        
+        if (-not $scanResult.Success) {
+          Write-Error "Security scan failed: $resultJson"
+          exit 1
+        }
+        
+        Write-Host "Security scan completed successfully"
+        exit 0 

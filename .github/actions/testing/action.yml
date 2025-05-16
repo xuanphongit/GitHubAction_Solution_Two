@@ -1,0 +1,94 @@
+name: 'Environment Validator'
+description: 'Validates environment variables and configurations'
+inputs:
+  config-path:
+    description: 'Path to the configuration file to validate'
+    required: true
+  environment:
+    description: 'Environment to validate against'
+    required: true
+  validate-secrets:
+    description: 'Whether to validate secrets'
+    required: false
+    default: 'true'
+outputs:
+  validation-result:
+    description: 'Result of the validation'
+    value: ${{ steps.validator.outputs.result }}
+runs:
+  using: "composite"
+  steps:
+    - name: Validate Environment
+      id: validator
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        
+        function Test-ConfigFile {
+          param(
+            [string]$ConfigPath,
+            [string]$Environment
+          )
+          
+          if (-not (Test-Path $ConfigPath)) {
+            throw "Configuration file not found: $ConfigPath"
+          }
+          
+          $config = Get-Content $ConfigPath -Raw
+          $placeholders = [regex]::Matches($config, '#\{([^}]+)\}#')
+          
+          $missingVars = @()
+          foreach ($match in $placeholders) {
+            $varName = $match.Groups[1].Value
+            if (-not (Get-Item env:$varName -ErrorAction SilentlyContinue)) {
+              $missingVars += $varName
+            }
+          }
+          
+          return $missingVars
+        }
+        
+        function Test-Secrets {
+          param(
+            [string]$Environment
+          )
+          
+          $requiredSecrets = @(
+            'AZURE_CREDENTIALS',
+            'KEY_VAULT_NAME',
+            'GH_PAT'
+          )
+          
+          $missingSecrets = @()
+          foreach ($secret in $requiredSecrets) {
+            if (-not (Get-Item env:$secret -ErrorAction SilentlyContinue)) {
+              $missingSecrets += $secret
+            }
+          }
+          
+          return $missingSecrets
+        }
+        
+        $configPath = "${{ inputs.config-path }}"
+        $environment = "${{ inputs.environment }}"
+        $validateSecrets = [System.Convert]::ToBoolean("${{ inputs.validate-secrets }}")
+        
+        $missingVars = Test-ConfigFile -ConfigPath $configPath -Environment $environment
+        $missingSecrets = if ($validateSecrets) { Test-Secrets -Environment $environment } else { @() }
+        
+        $validationResult = @{
+          Success = ($missingVars.Count -eq 0 -and $missingSecrets.Count -eq 0)
+          MissingVariables = $missingVars
+          MissingSecrets = $missingSecrets
+        }
+        
+        $resultJson = ConvertTo-Json $validationResult
+        echo "result=$resultJson" >> $env:GITHUB_OUTPUT
+        
+        if (-not $validationResult.Success) {
+          Write-Error "Validation failed: $resultJson"
+          exit 1
+        }
+        
+        Write-Host "Validation successful"
+        exit 0 
